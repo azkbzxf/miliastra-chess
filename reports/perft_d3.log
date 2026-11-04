@@ -1,0 +1,38 @@
+PASS perft initial d=1 = 20 (26ms)
+PASS perft initial d=2 = 400 (273ms)
+PASS perft initial d=3 = 8902 (4592ms)
+PASS moves initial = 20 步
+PASS fen initial 往返一致
+PASS perft kiwipete d=1 = 48 (56ms)
+PASS perft kiwipete d=2 = 2039 (1074ms)
+PASS perft kiwipete d=3 = 97862 (47581ms)
+PASS moves kiwipete = 48 步
+PASS fen kiwipete 往返一致
+PASS perft pos3 d=1 = 14 (10ms)
+PASS perft pos3 d=2 = 191 (124ms)
+PASS perft pos3 d=3 = 2812 (1527ms)
+PASS moves pos3 = 14 步
+PASS fen pos3 往返一致
+PASS perft pos4 d=1 = 6 (13ms)
+PASS perft pos4 d=2 = 264 (132ms)
+PASS perft pos4 d=3 = 9467 (4708ms)
+PASS moves pos4 = 6 步
+PASS fen pos4 往返一致
+PASS perft pos5 d=1 = 44 (28ms)
+PASS perft pos5 d=2 = 1486 (749ms)
+PASS perft pos5 d=3 = 62379 (37380ms)
+PASS moves pos5 = 44 步
+PASS fen pos5 往返一致
+PASS perft pos6 d=1 = 46 (34ms)
+PASS perft pos6 d=2 = 2079 (1547ms)
+PASS perft pos6 d=3 = 89890 (50146ms)
+PASS moves pos6 = 46 步
+PASS fen pos6 往返一致
+PASS special castling_ready check=false over=false reason=nil moves=26
+PASS special ep_ready check=false over=false reason=nil moves=7
+PASS special promo_ready check=false over=false reason=nil moves=9
+PASS special checkmate check=true over=true reason=checkmate moves=0
+PASS special stalemate check=false over=true reason=stalemate moves=0
+PASS special fifty check=false over=true reason=stalemate moves=0
+
+ALL PASS  用时 150153ms

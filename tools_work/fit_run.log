@@ -1,0 +1,21 @@
+[start] 2026-11-03T21:29:12.8153324+08:00
+PAWN    shapes=18  IoU=0.9738  recall=0.9902  precision=0.9833
+KNIGHT  shapes=18  IoU=0.9165  recall=0.9888  precision=0.9261
+BISHOP  shapes=18  IoU=0.9462  recall=0.9751  precision=0.9697
+ROOK    shapes=18  IoU=0.9767  recall=0.9890  precision=0.9874
+QUEEN   shapes=18  IoU=0.9267  recall=0.9742  precision=0.9500
+KING    shapes=18  IoU=0.9736  recall=0.9827  precision=0.9906
+wrote D:\输出目录\国际象棋\docs\pieces-fit-generated.lua
+wrote D:\输出目录\国际象棋\docs\pieces-fit-generated.json
+wrote D:\输出目录\国际象棋\docs\pieces-fit-preview.png
+
+=== 汇总 ===
+PAWN    18 图元  IoU 0.9738
+KNIGHT  18 图元  IoU 0.9165
+BISHOP  18 图元  IoU 0.9462
+ROOK    18 图元  IoU 0.9767
+QUEEN   18 图元  IoU 0.9267
+KING    18 图元  IoU 0.9736
+合计 108 图元（6 枚），平均 IoU 0.9523
+[exitcode] 0
+[end] 2026-11-03T21:33:22.9016497+08:00

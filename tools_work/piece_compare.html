@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>piece approaches compare</title>
+<style>
+body{margin:0;background:rgb(18,22,30);font-family:"Microsoft YaHei",sans-serif}
+#stage{position:relative;width:1600px;height:900px}
+.abs{position:absolute;box-sizing:border-box}
+.lbl{position:absolute;color:rgb(238,240,244);font-size:19px;text-align:center}
+</style></head><body><div id="stage"></div>
+<script>
+const PIXEL = {"8x8":{},"16x16":{},"20x20":{}};
+window.__loadPixel = function(data){ Object.assign(PIXEL, data); };
+</script>
+<script src="icons/pixel_data_all.json.js"></script>
+<script>
+const stage=document.getElementById('stage');
+function rgb(c){return 'rgb('+c[0]+','+c[1]+','+c[2]+')';}
+function div(css){const d=document.createElement('div'); d.className='abs'; Object.assign(d.style,css); return d;}
+
+const GLYPH={K:'\u265A',Q:'\u265B',R:'\u265C',B:'\u265D',N:'\u265E',P:'\u265F'};
+const SHAPES = {
+  P: [{s:'rr',x:0.22,y:0.80,w:0.56,h:0.14,a:0},{s:'rr',x:0.31,y:0.46,w:0.38,h:0.38,a:0},{s:'rr',x:0.37,y:0.36,w:0.26,h:0.16,a:0},{s:'ci',x:0.36,y:0.14,w:0.28,h:0.28,a:0}],
+  N: [{s:'rr',x:0.20,y:0.82,w:0.60,h:0.13,a:0},{s:'sq',x:0.33,y:0.54,w:0.34,h:0.30,a:0},{s:'sq',x:0.42,y:0.28,w:0.22,h:0.40,a:18},{s:'sq',x:0.40,y:0.16,w:0.30,h:0.16,a:-12},{s:'sq',x:0.62,y:0.06,w:0.08,h:0.16,a:10},{s:'sq',x:0.34,y:0.26,w:0.10,h:0.18,a:-30}],
+  B: [{s:'rr',x:0.22,y:0.80,w:0.56,h:0.14,a:0},{s:'rr',x:0.31,y:0.50,w:0.38,h:0.34,a:0},{s:'ci',x:0.35,y:0.28,w:0.30,h:0.30,a:0},{s:'sq',x:0.44,y:0.16,w:0.12,h:0.20,a:0},{s:'ci',x:0.45,y:0.09,w:0.10,h:0.10,a:0}],
+  R: [{s:'rr',x:0.21,y:0.80,w:0.58,h:0.14,a:0},{s:'sq',x:0.29,y:0.44,w:0.42,h:0.38,a:0},{s:'sq',x:0.26,y:0.34,w:0.48,h:0.12,a:0},{s:'sq',x:0.28,y:0.22,w:0.10,h:0.13,a:0},{s:'sq',x:0.45,y:0.22,w:0.10,h:0.13,a:0},{s:'sq',x:0.62,y:0.22,w:0.10,h:0.13,a:0}],
+  Q: [{s:'rr',x:0.19,y:0.80,w:0.62,h:0.14,a:0},{s:'rr',x:0.30,y:0.50,w:0.40,h:0.32,a:0},{s:'sq',x:0.24,y:0.38,w:0.52,h:0.14,a:0},{s:'ci',x:0.26,y:0.20,w:0.13,h:0.13,a:0},{s:'ci',x:0.43,y:0.16,w:0.14,h:0.14,a:0},{s:'ci',x:0.61,y:0.20,w:0.13,h:0.13,a:0},{s:'ci',x:0.35,y:0.30,w:0.11,h:0.11,a:0},{s:'ci',x:0.54,y:0.30,w:0.11,h:0.11,a:0}],
+  K: [{s:'rr',x:0.19,y:0.80,w:0.62,h:0.14,a:0},{s:'rr',x:0.30,y:0.50,w:0.40,h:0.32,a:0},{s:'sq',x:0.24,y:0.38,w:0.52,h:0.14,a:0},{s:'sq',x:0.45,y:0.10,w:0.10,h:0.28,a:0},{s:'sq',x:0.37,y:0.16,w:0.26,h:0.09,a:0}],
+};
+const C_WHITE=[250,250,246], C_BLACK=[26,24,22], OUT_WHITE=[38,34,28], OUT_BLACK=[238,234,226];
+
+const BOX=105, GAP=6, LEFT=60;
+const ROWS=[
+  {name:'A 圆盘+棋符（3 控件/枚）', kind:'disc'},
+  {name:'B 形状拼装（8~18 控件/枚）', kind:'shape'},
+  {name:'C 16×16 像素拼图（约 14 控件/枚）', kind:'pixel16'},
+  {name:'D 20×20 像素拼图（约 19 控件/枚）', kind:'pixel20'},
+];
+const ORDER=['K','Q','R','B','N','P'];
+let counts={};
+
+ROWS.forEach((row,ri)=>{
+  const top = 60 + ri*(BOX+56);
+  // 行标题
+  const t=document.createElement('div'); t.className='lbl';
+  Object.assign(t.style,{left:'30px',top:(top-26)+'px',width:'1500px',fontSize:'20px',textAlign:'left'});
+  t.textContent=row.name; stage.appendChild(t);
+  ORDER.forEach((k,ki)=>{
+    [true,false].forEach((isW,ci)=>{
+      const bx = LEFT + (ki*2+ci)*(BOX+GAP);
+      const bg = isW?[238,228,208]:[106,130,150];
+      stage.appendChild(div({left:bx+'px',top:top+'px',width:BOX+'px',height:BOX+'px',background:rgb(bg)}));
+      const n = drawOne(row.kind,k,isW,bx,top);
+      counts[row.kind]=(counts[row.kind]||0)+n;
+    });
+  });
+});
+function drawOne(kind,k,isW,bx,by){
+  const fill=isW?C_WHITE:C_BLACK, out=isW?OUT_WHITE:OUT_BLACK;
+  if(kind==='disc'){
+    const D=BOX*0.86, ring=BOX*0.055, innerD=D-ring*2;
+    stage.appendChild(div({left:(bx+(BOX-D)/2)+'px',top:(by+(BOX-D)/2)+'px',width:D+'px',height:D+'px',background:rgb(isW?OUT_WHITE:OUT_BLACK),borderRadius:'50%'}));
+    stage.appendChild(div({left:(bx+(BOX-innerD)/2)+'px',top:(by+(BOX-innerD)/2)+'px',width:innerD+'px',height:innerD+'px',background:rgb(fill),borderRadius:'50%'}));
+    const t=div({left:(bx+(BOX-innerD)/2)+'px',top:(by+(BOX-innerD)/2)+'px',width:innerD+'px',height:innerD+'px',
+      color:rgb(isW?[30,28,24]:[246,244,238]),fontSize:Math.floor(innerD*0.82)+'px',lineHeight:innerD+'px',textAlign:'center'});
+    t.textContent=GLYPH[k]; stage.appendChild(t);
+    return 3;
+  }
+  if(kind==='shape'){
+    for(const sp of SHAPES[k]){
+      const x=bx+sp.x*BOX, y=by+sp.y*BOX, w=sp.w*BOX, h=sp.h*BOX;
+      const pad=BOX*0.024, circ=sp.s==='ci', rad=sp.s==='rr'?'12%':'3px';
+      stage.appendChild(div({left:(x-pad)+'px',top:(y-pad)+'px',width:(w+pad*2)+'px',height:(h+pad*2)+'px',background:rgb(out),borderRadius:circ?'50%':rad,transform:sp.a?('rotate('+sp.a+'deg)'):''}));
+      stage.appendChild(div({left:x+'px',top:y+'px',width:w+'px',height:h+'px',background:rgb(fill),borderRadius:circ?'50%':rad,transform:sp.a?('rotate('+sp.a+'deg)'):''}));
+    }
+    return SHAPES[k].length*2;
+  }
+  if(kind==='pixel16'||kind==='pixel20'){
+    const grid = kind==='pixel16'?'16x16':'20x20';
+    const key = k+(isW?'W':'B');
+    const d = PIXEL[grid][key];
+    if(!d) return 0;
+    const gw=d.grid[0], gh=d.grid[1];
+    // 等比缩放 + 居中（与 pixel16.html 一致），不拉伸
+    const unit = Math.min(BOX*0.88/Math.max(gw,gh), BOX*0.12);
+    const ox = bx + (BOX-gw*unit)/2, oy = by + (BOX-gh*unit)/2;
+    let n=0;
+    for(const r of d.recs){
+      const [x,y,w,h,ci]=r;
+      const c=d.pal[ci-1];
+      stage.appendChild(div({left:(ox+x*unit)+'px',top:(oy+y*unit)+'px',width:(w*unit)+'px',height:(h*unit)+'px',
+        background:'rgba('+c[0]+','+c[1]+','+c[2]+','+(c[3]/255)+')'}));
+      n++;
+    }
+    return n;
+  }
+  return 0;
+}
+const note=document.createElement('div'); note.className='lbl';
+Object.assign(note.style,{left:'30px',top:(60+4*(BOX+56)-14)+'px',width:'1500px',fontSize:'20px',textAlign:'left'});
+note.textContent='放大 105px 对比 · 每行 6 种棋子 × 白/黑。数值为图元控件数（不含棋盘/文本框）。';
+stage.appendChild(note);
+window.__counts=counts;
+</script></body></html>

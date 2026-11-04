@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>shape preview</title>
+<style>
+body{margin:0;background:rgb(18,22,30);font-family:"Microsoft YaHei",sans-serif}
+#stage{position:relative;width:1600px;height:900px}
+.sq{position:absolute;box-sizing:border-box}
+.lbl{position:absolute;color:rgb(150,158,170);font-size:18px;text-align:center}
+</style></head><body><div id="stage"></div>
+<script>
+// ---- 形状规格：坐标系 0..1（以棋子外接框为 1） ----
+// s: 'sq'=100001 方图元  'ci'=100002 实心圆  'rr'=106011 圆角矩形
+// x,y = 左上角归一化；w,h = 归一化宽高；a = 旋转角度（度，绕中心）
+const PIECE_SHAPES = {
+  P: [ // 兵
+    {s:'rr', x:0.22, y:0.80, w:0.56, h:0.14, a:0},
+    {s:'rr', x:0.31, y:0.46, w:0.38, h:0.38, a:0},
+    {s:'rr', x:0.37, y:0.36, w:0.26, h:0.16, a:0},
+    {s:'ci', x:0.36, y:0.14, w:0.28, h:0.28, a:0},
+  ],
+  N: [ // 马
+    {s:'rr', x:0.20, y:0.82, w:0.60, h:0.13, a:0},
+    {s:'sq', x:0.34, y:0.52, w:0.32, h:0.32, a:0},
+    {s:'sq', x:0.44, y:0.26, w:0.20, h:0.42, a:22},
+    {s:'sq', x:0.38, y:0.18, w:0.34, h:0.17, a:-18},
+    {s:'sq', x:0.64, y:0.10, w:0.09, h:0.18, a:14},
+  ],
+  B: [ // 象
+    {s:'rr', x:0.22, y:0.80, w:0.56, h:0.14, a:0},
+    {s:'rr', x:0.31, y:0.50, w:0.38, h:0.34, a:0},
+    {s:'ci', x:0.35, y:0.28, w:0.30, h:0.30, a:0},
+    {s:'sq', x:0.44, y:0.16, w:0.12, h:0.20, a:0},
+    {s:'ci', x:0.45, y:0.09, w:0.10, h:0.10, a:0},
+  ],
+  R: [ // 车
+    {s:'rr', x:0.21, y:0.80, w:0.58, h:0.14, a:0},
+    {s:'sq', x:0.29, y:0.44, w:0.42, h:0.38, a:0},
+    {s:'sq', x:0.26, y:0.34, w:0.48, h:0.12, a:0},
+    {s:'sq', x:0.28, y:0.22, w:0.10, h:0.13, a:0},
+    {s:'sq', x:0.45, y:0.22, w:0.10, h:0.13, a:0},
+    {s:'sq', x:0.62, y:0.22, w:0.10, h:0.13, a:0},
+  ],
+  Q: [ // 后
+    {s:'rr', x:0.19, y:0.80, w:0.62, h:0.14, a:0},
+    {s:'rr', x:0.30, y:0.50, w:0.40, h:0.32, a:0},
+    {s:'sq', x:0.24, y:0.38, w:0.52, h:0.14, a:0},
+    {s:'ci', x:0.26, y:0.20, w:0.13, h:0.13, a:0},
+    {s:'ci', x:0.43, y:0.16, w:0.14, h:0.14, a:0},
+    {s:'ci', x:0.61, y:0.20, w:0.13, h:0.13, a:0},
+    {s:'ci', x:0.35, y:0.30, w:0.11, h:0.11, a:0},
+    {s:'ci', x:0.54, y:0.30, w:0.11, h:0.11, a:0},
+  ],
+  K: [ // 王
+    {s:'rr', x:0.19, y:0.80, w:0.62, h:0.14, a:0},
+    {s:'rr', x:0.30, y:0.50, w:0.40, h:0.32, a:0},
+    {s:'sq', x:0.24, y:0.38, w:0.52, h:0.14, a:0},
+    {s:'sq', x:0.45, y:0.10, w:0.10, h:0.28, a:0},
+    {s:'sq', x:0.37, y:0.16, w:0.26, h:0.09, a:0},
+  ],
+};
+
+// ---- 棋盘布局（与交付版一致） ----
+const BASE_W=1600, BASE_H=900;
+const boardSide=0.78*BASE_H, cell=boardSide/8;
+const boardLeft=(BASE_W-boardSide)/2, boardBottom=(BASE_H-boardSide)/2;
+const C_LIGHT=[238,228,208], C_DARK=[106,130,150];
+const C_WHITE=[250,250,246], C_BLACK=[26,24,22];
+const OUT_WHITE=[38,34,28], OUT_BLACK=[238,234,226];
+
+const stage=document.getElementById('stage');
+function div(cls, css){const d=document.createElement('div'); d.className=cls; Object.assign(d.style,css); return d;}
+function rgb(c){return 'rgb('+c[0]+','+c[1]+','+c[2]+')';}
+
+// 棋盘
+for(let r=0;r<8;r++)for(let f=0;f<8;f++){
+  const dark=(r+f)%2===0;
+  stage.appendChild(div('sq',{
+    left:(boardLeft+f*cell)+'px', top:(BASE_H-boardBottom-(r+1)*cell)+'px',
+    width:cell+'px', height:cell+'px', background:rgb(dark?C_DARK:C_LIGHT)
+  }));
+}
+// 坐标
+for(let f=0;f<8;f++){
+  const t=div('lbl',{left:(boardLeft+f*cell)+'px', top:(BASE_H-boardBottom+cell*0.25)+'px', width:cell+'px'});
+  t.textContent='abcdefgh'[f]; stage.appendChild(t);
+}
+for(let r=0;r<8;r++){
+  const t=div('lbl',{left:(boardLeft-cell*0.9)+'px', top:(BASE_H-boardBottom-(r+1)*cell+cell*0.3)+'px', width:cell+'px'});
+  t.textContent=String(r+1); stage.appendChild(t);
+}
+
+let shapeCount=0;
+function drawPiece(kind, isWhite, file, rank, scale){
+  scale = scale || 0.86;
+  const box = cell*scale;
+  const cx = boardLeft+file*cell+cell/2;
+  const cy = BASE_H-boardBottom-rank*cell-cell/2;
+  const left = cx-box/2, top = cy-box/2;
+  const fill = isWhite?C_WHITE:C_BLACK;
+  const out  = isWhite?OUT_WHITE:OUT_BLACK;
+  const shapes = PIECE_SHAPES[kind];
+  for(const sp of shapes){
+    // 描边层：整体外扩一点，画在下面
+    if(sp.s!=='ci' || true){}
+    addShape(sp, fill, out);
+  }
+  function addShape(sp, fillC, outC){
+    const x=left+sp.x*box, y=top+sp.y*box, w=sp.w*box, h=sp.h*box;
+    const isCircle = sp.s==='ci';
+    // 描边：外扩 1.6px
+    const pad = box*0.022;
+    const o=div('sq',{
+      left:(x-pad)+'px', top:(y-pad)+'px', width:(w+pad*2)+'px', height:(h+pad*2)+'px',
+      background:rgb(outC),
+      borderRadius: isCircle?'50%':'3px',
+      transform: sp.a?('rotate('+sp.a+'deg)'):''
+    });
+    stage.appendChild(o);
+    const b=div('sq',{
+      left:x+'px', top:y+'px', width:w+'px', height:h+'px',
+      background:rgb(fillC),
+      borderRadius: isCircle?'50%':'2px',
+      transform: sp.a?('rotate('+sp.a+'deg)'):''
+    });
+    stage.appendChild(b);
+    shapeCount+=2;
+  }
+}
+
+// 开局摆法：白方在下（rank0..1），黑方在上（rank6..7）
+const BACK=['R','N','B','Q','K','B','N','R'];
+for(let f=0;f<8;f++){
+  drawPiece(BACK[f], true, f, 0);
+  drawPiece('P', true, f, 1);
+  drawPiece('P', false, f, 6);
+  drawPiece(BACK[f], false, f, 7);
+}
+
+// 底部标注：每枚棋子的形状数
+const note=div('lbl',{left:'0px', top:(BASE_H-40)+'px', width:BASE_W+'px', fontSize:'20px', color:'rgb(238,240,244)'});
+note.textContent='形状拼装方案：每枚棋子由 方图元100001 / 实心圆100002 / 圆角矩形106011 叠加（含描边层），共 '+shapeCount+' 个图元控件';
+stage.appendChild(note);
+
+window.__shapeReport = {shapeCount, perPiece: Object.fromEntries(Object.entries(PIECE_SHAPES).map(([k,v])=>[k,v.length*2]))};
+</script></body></html>

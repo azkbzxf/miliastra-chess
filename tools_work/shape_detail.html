@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>shape detail</title>
+<style>
+body{margin:0;background:rgb(18,22,30);font-family:"Microsoft YaHei",sans-serif}
+#stage{position:relative;width:1600px;height:900px}
+.abs{position:absolute;box-sizing:border-box}
+.lbl{position:absolute;color:rgb(238,240,244);font-size:20px;text-align:center}
+</style></head><body><div id="stage"></div>
+<script>
+const PIECE_SHAPES = {
+  P: [{s:'rr',x:0.22,y:0.80,w:0.56,h:0.14,a:0},{s:'rr',x:0.31,y:0.46,w:0.38,h:0.38,a:0},{s:'rr',x:0.37,y:0.36,w:0.26,h:0.16,a:0},{s:'ci',x:0.36,y:0.14,w:0.28,h:0.28,a:0}],
+  N: [{s:'rr',x:0.20,y:0.82,w:0.60,h:0.13,a:0},{s:'sq',x:0.33,y:0.54,w:0.34,h:0.30,a:0},{s:'sq',x:0.42,y:0.28,w:0.22,h:0.40,a:18},{s:'sq',x:0.40,y:0.16,w:0.30,h:0.16,a:-12},{s:'sq',x:0.62,y:0.06,w:0.08,h:0.16,a:10},{s:'sq',x:0.34,y:0.26,w:0.10,h:0.18,a:-30}],
+  B: [{s:'rr',x:0.22,y:0.80,w:0.56,h:0.14,a:0},{s:'rr',x:0.31,y:0.50,w:0.38,h:0.34,a:0},{s:'ci',x:0.35,y:0.28,w:0.30,h:0.30,a:0},{s:'sq',x:0.44,y:0.16,w:0.12,h:0.20,a:0},{s:'ci',x:0.45,y:0.09,w:0.10,h:0.10,a:0}],
+  R: [{s:'rr',x:0.21,y:0.80,w:0.58,h:0.14,a:0},{s:'sq',x:0.29,y:0.44,w:0.42,h:0.38,a:0},{s:'sq',x:0.26,y:0.34,w:0.48,h:0.12,a:0},{s:'sq',x:0.28,y:0.22,w:0.10,h:0.13,a:0},{s:'sq',x:0.45,y:0.22,w:0.10,h:0.13,a:0},{s:'sq',x:0.62,y:0.22,w:0.10,h:0.13,a:0}],
+  Q: [{s:'rr',x:0.19,y:0.80,w:0.62,h:0.14,a:0},{s:'rr',x:0.30,y:0.50,w:0.40,h:0.32,a:0},{s:'sq',x:0.24,y:0.38,w:0.52,h:0.14,a:0},{s:'ci',x:0.26,y:0.20,w:0.13,h:0.13,a:0},{s:'ci',x:0.43,y:0.16,w:0.14,h:0.14,a:0},{s:'ci',x:0.61,y:0.20,w:0.13,h:0.13,a:0},{s:'ci',x:0.35,y:0.30,w:0.11,h:0.11,a:0},{s:'ci',x:0.54,y:0.30,w:0.11,h:0.11,a:0}],
+  K: [{s:'rr',x:0.19,y:0.80,w:0.62,h:0.14,a:0},{s:'rr',x:0.30,y:0.50,w:0.40,h:0.32,a:0},{s:'sq',x:0.24,y:0.38,w:0.52,h:0.14,a:0},{s:'sq',x:0.45,y:0.10,w:0.10,h:0.28,a:0},{s:'sq',x:0.37,y:0.16,w:0.26,h:0.09,a:0}],
+};
+const GLYPH={K:'\u265A',Q:'\u265B',R:'\u265C',B:'\u265D',N:'\u265E',P:'\u265F'};
+const stage=document.getElementById('stage');
+function rgb(c){return 'rgb('+c[0]+','+c[1]+','+c[2]+')';}
+function div(css){const d=document.createElement('div'); d.className='abs'; Object.assign(d.style,css); return d;}
+
+const C_WHITE=[250,250,246], C_BLACK=[26,24,22];
+const OUT_WHITE=[38,34,28], OUT_BLACK=[238,234,226];
+
+// 放大展示：6 种 × 2 色，box=150px
+const BOX=150, GAP=30, TOP=90;
+const kinds=['K','Q','R','B','N','P'];
+kinds.forEach((k,ki)=>{
+  [true,false].forEach((isW,ci)=>{
+    const bx = 60 + ki*(BOX+GAP);
+    const by = TOP + ci*(BOX+GAP+50);
+    // 底色方块（模拟棋盘格）
+    const bgc = ci===0 ? [238,228,208] : [106,130,150];
+    stage.appendChild(div({left:bx+'px',top:by+'px',width:BOX+'px',height:BOX+'px',background:rgb(bgc)}));
+    const fill = isW?C_WHITE:C_BLACK, out = isW?OUT_WHITE:OUT_BLACK;
+    for(const sp of PIECE_SHAPES[k]){
+      const x=bx+sp.x*BOX, y=by+sp.y*BOX, w=sp.w*BOX, h=sp.h*BOX;
+      const pad=BOX*0.022, circ=sp.s==='ci';
+      stage.appendChild(div({left:(x-pad)+'px',top:(y-pad)+'px',width:(w+pad*2)+'px',height:(h+pad*2)+'px',
+        background:rgb(out),borderRadius:circ?'50%':'3px',transform:sp.a?('rotate('+sp.a+'deg)'):''}));
+      stage.appendChild(div({left:x+'px',top:y+'px',width:w+'px',height:h+'px',
+        background:rgb(fill),borderRadius:circ?'50%':'2px',transform:sp.a?('rotate('+sp.a+'deg)'):''}));
+    }
+  });
+  const l=document.createElement('div'); l.className='lbl';
+  Object.assign(l.style,{left:(60+ki*(BOX+GAP))+'px',top:(TOP-40)+'px',width:BOX+'px'});
+  l.textContent=k+' ('+PIECE_SHAPES[k].length*2+')'; stage.appendChild(l);
+});
+const t=document.createElement('div'); t.className='lbl';
+Object.assign(t.style,{left:'60px',top:'30px',width:'1400px',fontSize:'28px'});
+t.textContent='形状拼装 · 放大 150px 检查（括号内为该棋子图元控件数，含描边层）';
+stage.appendChild(t);
+</script></body></html>

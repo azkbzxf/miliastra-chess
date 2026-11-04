@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>knight variants</title>
+<style>
+body{margin:0;background:rgb(18,22,30);font-family:"Microsoft YaHei",sans-serif}
+#stage{position:relative;width:1600px;height:900px}
+.abs{position:absolute;box-sizing:border-box}
+.lbl{position:absolute;color:rgb(238,240,244);font-size:22px;text-align:center}
+</style></head><body><div id="stage"></div>
+<script>
+const stage=document.getElementById('stage');
+function rgb(c){return 'rgb('+c[0]+','+c[1]+','+c[2]+')';}
+function div(css){const d=document.createElement('div'); d.className='abs'; Object.assign(d.style,css); return d;}
+const C_WHITE=[250,250,246], C_BLACK=[26,24,22], OUT_WHITE=[38,34,28], OUT_BLACK=[238,234,226];
+
+// 马的候选方案：只用 方图元(sq) / 实心圆(ci) / 圆角矩形(rr)
+const KNIGHT_VARIANTS = {
+  'v1 当前': [
+    {s:'rr',x:0.20,y:0.82,w:0.60,h:0.13,a:0},
+    {s:'sq',x:0.33,y:0.54,w:0.34,h:0.30,a:0},
+    {s:'sq',x:0.42,y:0.28,w:0.22,h:0.40,a:18},
+    {s:'sq',x:0.40,y:0.16,w:0.30,h:0.16,a:-12},
+    {s:'sq',x:0.62,y:0.06,w:0.08,h:0.16,a:10},
+    {s:'sq',x:0.34,y:0.26,w:0.10,h:0.18,a:-30},
+  ],
+  'v2 颈部两段': [
+    {s:'rr',x:0.18,y:0.83,w:0.64,h:0.12,a:0},
+    {s:'sq',x:0.28,y:0.60,w:0.30,h:0.28,a:0},
+    {s:'sq',x:0.36,y:0.40,w:0.26,h:0.30,a:14},
+    {s:'sq',x:0.46,y:0.22,w:0.24,h:0.26,a:22},
+    {s:'sq',x:0.56,y:0.14,w:0.26,h:0.15,a:-6},
+    {s:'sq',x:0.74,y:0.10,w:0.12,h:0.13,a:0},
+    {s:'sq',x:0.52,y:0.06,w:0.09,h:0.15,a:16},
+    {s:'sq',x:0.40,y:0.07,w:0.08,h:0.14,a:24},
+  ],
+  'v3 头部前伸': [
+    {s:'rr',x:0.17,y:0.83,w:0.66,h:0.12,a:0},
+    {s:'sq',x:0.26,y:0.58,w:0.32,h:0.30,a:0},
+    {s:'sq',x:0.34,y:0.36,w:0.26,h:0.32,a:12},
+    {s:'sq',x:0.44,y:0.18,w:0.22,h:0.24,a:20},
+    {s:'sq',x:0.54,y:0.12,w:0.30,h:0.16,a:-8},
+    {s:'sq',x:0.78,y:0.06,w:0.10,h:0.12,a:0},
+    {s:'sq',x:0.50,y:0.04,w:0.10,h:0.16,a:14},
+    {s:'sq',x:0.36,y:0.05,w:0.09,h:0.15,a:22},
+    {s:'ci',x:0.28,y:0.24,w:0.11,h:0.11,a:0},
+  ],
+  'v4 鬃毛+头': [
+    {s:'rr',x:0.17,y:0.83,w:0.66,h:0.12,a:0},
+    {s:'sq',x:0.25,y:0.56,w:0.34,h:0.32,a:0},
+    {s:'sq',x:0.33,y:0.34,w:0.28,h:0.32,a:10},
+    {s:'sq',x:0.30,y:0.20,w:0.16,h:0.34,a:-14},
+    {s:'sq',x:0.44,y:0.16,w:0.24,h:0.26,a:18},
+    {s:'sq',x:0.56,y:0.10,w:0.30,h:0.15,a:-8},
+    {s:'sq',x:0.78,y:0.05,w:0.10,h:0.12,a:0},
+    {s:'sq',x:0.50,y:0.03,w:0.10,h:0.15,a:14},
+    {s:'ci',x:0.44,y:0.30,w:0.09,h:0.09,a:0},
+  ],
+};
+
+const BOX=230, GAP=40, TOP=120;
+const names=Object.keys(KNIGHT_VARIANTS);
+names.forEach((nm,ni)=>{
+  const bx = 40 + ni*(BOX+GAP);
+  // 白子（浅格底）
+  stage.appendChild(div({left:bx+'px',top:TOP+'px',width:BOX+'px',height:BOX+'px',background:rgb([238,228,208])}));
+  drawKnight(KNIGHT_VARIANTS[nm], bx, TOP, true);
+  // 黑子（深格底）
+  stage.appendChild(div({left:bx+'px',top:(TOP+BOX+GAP)+'px',width:BOX+'px',height:BOX+'px',background:rgb([106,130,150])}));
+  drawKnight(KNIGHT_VARIANTS[nm], bx, TOP+BOX+GAP, false);
+
+  const l=document.createElement('div'); l.className='lbl';
+  Object.assign(l.style,{left:bx+'px',top:(TOP-50)+'px',width:BOX+'px'});
+  l.textContent=nm+' ('+KNIGHT_VARIANTS[nm].length*2+')';
+  stage.appendChild(l);
+});
+function drawKnight(shapes,bx,by,isW){
+  const fill=isW?C_WHITE:C_BLACK, out=isW?OUT_WHITE:OUT_BLACK;
+  for(const sp of shapes){
+    const x=bx+sp.x*BOX, y=by+sp.y*BOX, w=sp.w*BOX, h=sp.h*BOX;
+    const pad=BOX*0.022, circ=sp.s==='ci', rad=sp.s==='rr'?'12%':'3px';
+    stage.appendChild(div({left:(x-pad)+'px',top:(y-pad)+'px',width:(w+pad*2)+'px',height:(h+pad*2)+'px',
+      background:rgb(out),borderRadius:circ?'50%':rad,transform:sp.a?('rotate('+sp.a+'deg)'):''}));
+    stage.appendChild(div({left:x+'px',top:y+'px',width:w+'px',height:h+'px',
+      background:rgb(fill),borderRadius:circ?'50%':rad,transform:sp.a?('rotate('+sp.a+'deg)'):''}));
+  }
+}
+const t=document.createElement('div'); t.className='lbl';
+Object.assign(t.style,{left:'40px',top:'40px',width:'1400px',fontSize:'30px'});
+t.textContent='马的四种形状拼装方案（上=白子浅底，下=黑子深底）';
+stage.appendChild(t);
+</script></body></html>

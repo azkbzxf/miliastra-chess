@@ -1,0 +1,7 @@
+[start] 2026-11-03T21:50:41.4025452+08:00
+  File "D:\输出目录\国际象棋\tools_work\fit_pieces.py", line 421
+    cx, cy, w, h, rot = ncx, ncy, nw, nh, nr        if not improved:
+                                                                   ^
+SyntaxError: invalid syntax
+[exitcode] 1
+[end] 2026-11-03T21:50:41.5878759+08:00

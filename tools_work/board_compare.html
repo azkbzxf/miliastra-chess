@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>board compare</title>
+<style>
+body{margin:0;background:rgb(18,22,30);font-family:"Microsoft YaHei",sans-serif}
+#stage{position:relative;width:1600px;height:900px}
+.abs{position:absolute;box-sizing:border-box}
+.lbl{position:absolute;color:rgb(238,240,244);font-size:22px;text-align:center}
+</style></head><body><div id="stage"></div>
+<script>
+const BASE_W=1600, BASE_H=900;
+const boardSide=0.78*BASE_H*0.72, cell=boardSide/8;   // 缩小以便并排
+const C_LIGHT=[238,228,208], C_DARK=[106,130,150];
+const C_WHITE=[250,250,246], C_BLACK=[26,24,22], OUT_WHITE=[38,34,28], OUT_BLACK=[238,234,226];
+const GLYPH={K:'\u265A',Q:'\u265B',R:'\u265C',B:'\u265D',N:'\u265E',P:'\u265F'};
+const stage=document.getElementById('stage');
+function rgb(c){return 'rgb('+c[0]+','+c[1]+','+c[2]+')';}
+function div(css){const d=document.createElement('div'); d.className='abs'; Object.assign(d.style,css); return d;}
+
+function drawBoard(left, top, mode){
+  const bs=boardSide;
+  for(let r=0;r<8;r++)for(let f=0;f<8;f++){
+    const dark=(r+f)%2===0;
+    stage.appendChild(div({left:(left+f*cell)+'px', top:(top+(7-r)*cell)+'px',
+      width:cell+'px', height:cell+'px', background:rgb(dark?C_DARK:C_LIGHT)}));
+  }
+  const BACK=['R','N','B','Q','K','B','N','R'];
+  for(let f=0;f<8;f++){
+    drawPiece(BACK[f], true, f, 0, left, top, mode);
+    drawPiece('P', true, f, 1, left, top, mode);
+    drawPiece('P', false, f, 6, left, top, mode);
+    drawPiece(BACK[f], false, f, 7, left, top, mode);
+  }
+}
+function drawPiece(kind,isW,file,rank,left,top,mode){
+  const cx=left+file*cell+cell/2, cy=top+(7-rank)*cell+cell/2;
+  const fill=isW?C_WHITE:C_BLACK, out=isW?OUT_WHITE:OUT_BLACK;
+  if(mode==='disc'){
+    const D=cell*0.84, ring=cell*0.055, innerD=D-ring*2;
+    stage.appendChild(div({left:(cx-D/2)+'px',top:(cy-D/2)+'px',width:D+'px',height:D+'px',background:rgb(out),borderRadius:'50%'}));
+    stage.appendChild(div({left:(cx-innerD/2)+'px',top:(cy-innerD/2)+'px',width:innerD+'px',height:innerD+'px',background:rgb(fill),borderRadius:'50%'}));
+    const t=div({left:(cx-innerD/2)+'px',top:(cy-innerD/2)+'px',width:innerD+'px',height:innerD+'px',
+      color:rgb(isW?[30,28,24]:[246,244,238]),fontSize:Math.floor(innerD*0.86)+'px',lineHeight:innerD+'px',textAlign:'center'});
+    t.textContent=GLYPH[kind]; stage.appendChild(t);
+  } else {
+    const t=div({left:(cx-cell/2)+'px',top:(cy-cell/2)+'px',width:cell+'px',height:cell+'px',
+      color:rgb(fill),fontSize:Math.floor(cell*0.62)+'px',lineHeight:cell+'px',textAlign:'center'});
+    t.textContent=GLYPH[kind]; stage.appendChild(t);
+  }
+}
+
+const GAP=70;
+const boardW=boardSide;
+const totalW=boardW*2+GAP;
+const L1=(BASE_W-totalW)/2, L2=L1+boardW+GAP;
+const TOP=170;
+drawBoard(L1, TOP, 'plain');
+drawBoard(L2, TOP, 'disc');
+
+const t1=document.createElement('div'); t1.className='lbl';
+Object.assign(t1.style,{left:L1+'px',top:(TOP-50)+'px',width:boardW+'px',fontSize:'24px'});
+t1.textContent='当前版本：纯棋符（1 控件/枚）'; stage.appendChild(t1);
+
+const t2=document.createElement('div'); t2.className='lbl';
+Object.assign(t2.style,{left:L2+'px',top:(TOP-50)+'px',width:boardW+'px',fontSize:'24px'});
+t2.textContent='借鉴中国象棋：圆盘+棋符（3 控件/枚）'; stage.appendChild(t2);
+
+const note=document.createElement('div'); note.className='lbl';
+Object.assign(note.style,{left:'0px',top:(TOP+boardSide+50)+'px',width:BASE_W+'px',fontSize:'21px'});
+note.textContent='中国象棋存档 CreatePieceCtrl()：外圈实心圆 100002 + 内圈实心圆 100002 + 文本框字符，共 3 控件；高亮只改内圈 imageColor，不重建控件';
+stage.appendChild(note);
+</script></body></html>

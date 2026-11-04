@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>hybrid</title>
+<style>
+body{margin:0;background:rgb(18,22,30);font-family:"Microsoft YaHei",sans-serif}
+#stage{position:relative;width:1600px;height:900px}
+.abs{position:absolute;box-sizing:border-box}
+.lbl{position:absolute;color:rgb(238,240,244);font-size:20px;text-align:center}
+</style></head><body><div id="stage"></div>
+<script>
+const stage=document.getElementById('stage');
+function rgb(c){return 'rgb('+c[0]+','+c[1]+','+c[2]+')';}
+function div(css){const d=document.createElement('div'); d.className='abs'; Object.assign(d.style,css); return d;}
+const C_WHITE=[250,250,246], C_BLACK=[26,24,22], OUT_WHITE=[38,34,28], OUT_BLACK=[238,234,226];
+const GLYPH={K:'\u265A',Q:'\u265B',R:'\u265C',B:'\u265D',N:'\u265E',P:'\u265F'};
+const SHAPES = {
+  P: [{s:'rr',x:0.22,y:0.80,w:0.56,h:0.14,a:0},{s:'rr',x:0.31,y:0.46,w:0.38,h:0.38,a:0},{s:'rr',x:0.37,y:0.36,w:0.26,h:0.16,a:0},{s:'ci',x:0.36,y:0.14,w:0.28,h:0.28,a:0}],
+  N: [{s:'rr',x:0.20,y:0.82,w:0.60,h:0.13,a:0},{s:'sq',x:0.33,y:0.54,w:0.34,h:0.30,a:0},{s:'sq',x:0.42,y:0.28,w:0.22,h:0.40,a:18},{s:'sq',x:0.40,y:0.16,w:0.30,h:0.16,a:-12},{s:'sq',x:0.62,y:0.06,w:0.08,h:0.16,a:10},{s:'sq',x:0.34,y:0.26,w:0.10,h:0.18,a:-30}],
+  B: [{s:'rr',x:0.22,y:0.80,w:0.56,h:0.14,a:0},{s:'rr',x:0.31,y:0.50,w:0.38,h:0.34,a:0},{s:'ci',x:0.35,y:0.28,w:0.30,h:0.30,a:0},{s:'sq',x:0.44,y:0.16,w:0.12,h:0.20,a:0},{s:'ci',x:0.45,y:0.09,w:0.10,h:0.10,a:0}],
+  R: [{s:'rr',x:0.21,y:0.80,w:0.58,h:0.14,a:0},{s:'sq',x:0.29,y:0.44,w:0.42,h:0.38,a:0},{s:'sq',x:0.26,y:0.34,w:0.48,h:0.12,a:0},{s:'sq',x:0.28,y:0.22,w:0.10,h:0.13,a:0},{s:'sq',x:0.45,y:0.22,w:0.10,h:0.13,a:0},{s:'sq',x:0.62,y:0.22,w:0.10,h:0.13,a:0}],
+  Q: [{s:'rr',x:0.19,y:0.80,w:0.62,h:0.14,a:0},{s:'rr',x:0.30,y:0.50,w:0.40,h:0.32,a:0},{s:'sq',x:0.24,y:0.38,w:0.52,h:0.14,a:0},{s:'ci',x:0.26,y:0.20,w:0.13,h:0.13,a:0},{s:'ci',x:0.43,y:0.16,w:0.14,h:0.14,a:0},{s:'ci',x:0.61,y:0.20,w:0.13,h:0.13,a:0},{s:'ci',x:0.35,y:0.30,w:0.11,h:0.11,a:0},{s:'ci',x:0.54,y:0.30,w:0.11,h:0.11,a:0}],
+  K: [{s:'rr',x:0.19,y:0.80,w:0.62,h:0.14,a:0},{s:'rr',x:0.30,y:0.50,w:0.40,h:0.32,a:0},{s:'sq',x:0.24,y:0.38,w:0.52,h:0.14,a:0},{s:'sq',x:0.45,y:0.10,w:0.10,h:0.28,a:0},{s:'sq',x:0.37,y:0.16,w:0.26,h:0.09,a:0}],
+};
+// 渲染器：mode = 'glyph' | 'disc' | 'hybrid'
+function drawPiece(kind,isW,bx,by,box,mode){
+  const fill=isW?C_WHITE:C_BLACK, out=isW?OUT_WHITE:OUT_BLACK;
+  let n=0;
+  if(mode==='disc'||mode==='hybrid'){
+    const D=box*0.88, ring=box*0.05, innerD=D-ring*2;
+    // 外圈
+    stage.appendChild(div({left:(bx+(box-D)/2)+'px',top:(by+(box-D)/2)+'px',width:D+'px',height:D+'px',background:rgb(out),borderRadius:'50%'})); n++;
+    // 内圈
+    stage.appendChild(div({left:(bx+(box-innerD)/2)+'px',top:(by+(box-innerD)/2)+'px',width:innerD+'px',height:innerD+'px',background:rgb(fill),borderRadius:'50%'})); n++;
+    if(mode==='disc'){
+      const t=div({left:(bx+(box-innerD)/2)+'px',top:(by+(box-innerD)/2)+'px',width:innerD+'px',height:innerD+'px',
+        color:rgb(isW?[30,28,24]:[246,244,238]),fontSize:Math.floor(innerD*0.84)+'px',lineHeight:innerD+'px',textAlign:'center'});
+      t.textContent=GLYPH[kind]; stage.appendChild(t); n++;
+      return n;
+    }
+    // hybrid: 圆盘内再叠形状拼装轮廓（缩到 innerD 的 78%）
+    const ib=innerD*0.78, ix=bx+(box-ib)/2, iy=by+(box-ib)/2;
+    for(const sp of SHAPES[kind]){
+      const x=ix+sp.x*ib, y=iy+sp.y*ib, w=sp.w*ib, h=sp.h*ib;
+      const pad=ib*0.03, circ=sp.s==='ci', rad=sp.s==='rr'?'12%':'4px';
+      stage.appendChild(div({left:(x-pad)+'px',top:(y-pad)+'px',width:(w+pad*2)+'px',height:(h+pad*2)+'px',background:rgb(out),borderRadius:circ?'50%':rad,transform:sp.a?('rotate('+sp.a+'deg)'):''})); n++;
+      stage.appendChild(div({left:x+'px',top:y+'px',width:w+'px',height:h+'px',background:rgb(fill),borderRadius:circ?'50%':rad,transform:sp.a?('rotate('+sp.a+'deg)'):''})); n++;
+    }
+    return n;
+  }
+  // glyph: 纯字符
+  const t=div({left:bx+'px',top:by+'px',width:box+'px',height:box+'px',
+    color:rgb(fill),fontSize:Math.floor(box*0.78)+'px',lineHeight:box+'px',textAlign:'center'});
+  t.textContent=GLYPH[kind]; stage.appendChild(t);
+  return 1;
+}
+
+const ORDER=['K','Q','R','B','N','P'];
+const MODES=[{k:'glyph',name:'当前：纯棋符（1 控件/枚）'},{k:'disc',name:'A 圆盘+棋符（3 控件/枚）'},{k:'hybrid',name:'B 圆盘+形状拼装（不依赖字体）'}];
+const BOX=130, GAPX=14, ROWGAP=52, LEFT=50, TOP=90;
+MODES.forEach((m,ri)=>{
+  const top=TOP+ri*(BOX+ROWGAP);
+  const t=document.createElement('div'); t.className='lbl';
+  Object.assign(t.style,{left:LEFT+'px',top:(top-30)+'px',width:'1500px',fontSize:'21px',textAlign:'left'});
+  t.textContent=m.name; stage.appendChild(t);
+  let total=0;
+  ORDER.forEach((k,ki)=>{
+    [true,false].forEach((isW,ci)=>{
+      const bx=LEFT+(ki*2+ci)*(BOX+GAPX);
+      stage.appendChild(div({left:bx+'px',top:top+'px',width:BOX+'px',height:BOX+'px',background:rgb(isW?[238,228,208]:[106,130,150])}));
+      total+=drawPiece(k,isW,bx,top,BOX,m.k);
+    });
+  });
+  const s=document.createElement('div'); s.className='lbl';
+  Object.assign(s.style,{left:(LEFT+12*(BOX+GAPX)+20)+'px',top:(top+BOX/2-16)+'px',width:'300px',fontSize:'22px',textAlign:'left'});
+  s.textContent='12 枚合计 '+total+' 控件'; stage.appendChild(s);
+});
+const note=document.createElement('div'); note.className='lbl';
+Object.assign(note.style,{left:LEFT+'px',top:(TOP+3*(BOX+ROWGAP)+10)+'px',width:'1500px',fontSize:'19px',textAlign:'left'});
+note.textContent='中国象棋存档 CreatePieceCtrl() 借鉴点：外圈圆(100002)+内圈圆(100002)+字符文本框；高亮只改内圈 imageColor，不重建控件。';
+stage.appendChild(note);
+</script></body></html>

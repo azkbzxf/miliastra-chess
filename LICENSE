@@ -1,0 +1,38 @@
+MIT License
+
+Copyright (c) 2026 azkbzxf
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---------------------------------------------------------------------------
+第三方素材与商标声明 / Third-party notices
+
+1) 棋子造型参考 cburnett 国际象棋字型（Colin M.L. Burnett, CC BY-SA 3.0），
+   经由 en-croissant 项目提取，源文件见 out/棋子素材-en-croissant/。
+   该素材仅用于「拟合算法」的输入与对照图；运行时脚本里不包含任何图片，
+   棋子是用平台基础图元（矩形/圆/三角）按拟合出的坐标重新绘制的。
+   cburnett 素材本身仍按其 CC BY-SA 3.0 授权分发。
+
+2) 「原神」「千星奇域」「千星沙箱」及相关名称、界面与音效资产版权归
+   米哈游 / HoYoverse 所有。本项目是非官方的玩家创作辅助工具与示例代码，
+   与米哈游无隶属关系，也未获得其背书。
+
+3) 本仓库不含任何游戏音频资产文件。音效通过平台接口
+   game.PlayAudio2D(音效资产ID) 引用编辑器内的音效资产，
+   使用者在自己的项目中使用时需遵守平台的素材使用条款。

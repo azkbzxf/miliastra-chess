@@ -1,0 +1,212 @@
+{
+  "set": "cburnett",
+  "source": "https://github.com/franciscoBSalgueiro/en-croissant/tree/master/public/pieces",
+  "license": "CC-BY-SA 3.0 (cburnett, originally from Wikimedia Commons)",
+  "nativeSize": 45,
+  "pieces": [
+    {
+      "name": "KW",
+      "piece": "king",
+      "color": "white",
+      "unicode": "♔",
+      "fenChar": "K",
+      "svg": "svg/KW.svg",
+      "png": {
+        "48": "png/48/KW.png",
+        "64": "png/64/KW.png",
+        "128": "png/128/KW.png",
+        "240": "png/240/KW.png",
+        "256": "png/256/KW.png",
+        "512": "png/512/KW.png"
+      },
+      "cssClass": "king.white"
+    },
+    {
+      "name": "QW",
+      "piece": "queen",
+      "color": "white",
+      "unicode": "♕",
+      "fenChar": "Q",
+      "svg": "svg/QW.svg",
+      "png": {
+        "48": "png/48/QW.png",
+        "64": "png/64/QW.png",
+        "128": "png/128/QW.png",
+        "240": "png/240/QW.png",
+        "256": "png/256/QW.png",
+        "512": "png/512/QW.png"
+      },
+      "cssClass": "queen.white"
+    },
+    {
+      "name": "RW",
+      "piece": "rook",
+      "color": "white",
+      "unicode": "♖",
+      "fenChar": "R",
+      "svg": "svg/RW.svg",
+      "png": {
+        "48": "png/48/RW.png",
+        "64": "png/64/RW.png",
+        "128": "png/128/RW.png",
+        "240": "png/240/RW.png",
+        "256": "png/256/RW.png",
+        "512": "png/512/RW.png"
+      },
+      "cssClass": "rook.white"
+    },
+    {
+      "name": "BW",
+      "piece": "bishop",
+      "color": "white",
+      "unicode": "♗",
+      "fenChar": "B",
+      "svg": "svg/BW.svg",
+      "png": {
+        "48": "png/48/BW.png",
+        "64": "png/64/BW.png",
+        "128": "png/128/BW.png",
+        "240": "png/240/BW.png",
+        "256": "png/256/BW.png",
+        "512": "png/512/BW.png"
+      },
+      "cssClass": "bishop.white"
+    },
+    {
+      "name": "NW",
+      "piece": "knight",
+      "color": "white",
+      "unicode": "♘",
+      "fenChar": "N",
+      "svg": "svg/NW.svg",
+      "png": {
+        "48": "png/48/NW.png",
+        "64": "png/64/NW.png",
+        "128": "png/128/NW.png",
+        "240": "png/240/NW.png",
+        "256": "png/256/NW.png",
+        "512": "png/512/NW.png"
+      },
+      "cssClass": "knight.white"
+    },
+    {
+      "name": "PW",
+      "piece": "pawn",
+      "color": "white",
+      "unicode": "♙",
+      "fenChar": "P",
+      "svg": "svg/PW.svg",
+      "png": {
+        "48": "png/48/PW.png",
+        "64": "png/64/PW.png",
+        "128": "png/128/PW.png",
+        "240": "png/240/PW.png",
+        "256": "png/256/PW.png",
+        "512": "png/512/PW.png"
+      },
+      "cssClass": "pawn.white"
+    },
+    {
+      "name": "KB",
+      "piece": "king",
+      "color": "black",
+      "unicode": "♚",
+      "fenChar": "k",
+      "svg": "svg/KB.svg",
+      "png": {
+        "48": "png/48/KB.png",
+        "64": "png/64/KB.png",
+        "128": "png/128/KB.png",
+        "240": "png/240/KB.png",
+        "256": "png/256/KB.png",
+        "512": "png/512/KB.png"
+      },
+      "cssClass": "king.black"
+    },
+    {
+      "name": "QB",
+      "piece": "queen",
+      "color": "black",
+      "unicode": "♛",
+      "fenChar": "q",
+      "svg": "svg/QB.svg",
+      "png": {
+        "48": "png/48/QB.png",
+        "64": "png/64/QB.png",
+        "128": "png/128/QB.png",
+        "240": "png/240/QB.png",
+        "256": "png/256/QB.png",
+        "512": "png/512/QB.png"
+      },
+      "cssClass": "queen.black"
+    },
+    {
+      "name": "RB",
+      "piece": "rook",
+      "color": "black",
+      "unicode": "♜",
+      "fenChar": "r",
+      "svg": "svg/RB.svg",
+      "png": {
+        "48": "png/48/RB.png",
+        "64": "png/64/RB.png",
+        "128": "png/128/RB.png",
+        "240": "png/240/RB.png",
+        "256": "png/256/RB.png",
+        "512": "png/512/RB.png"
+      },
+      "cssClass": "rook.black"
+    },
+    {
+      "name": "BB",
+      "piece": "bishop",
+      "color": "black",
+      "unicode": "♝",
+      "fenChar": "b",
+      "svg": "svg/BB.svg",
+      "png": {
+        "48": "png/48/BB.png",
+        "64": "png/64/BB.png",
+        "128": "png/128/BB.png",
+        "240": "png/240/BB.png",
+        "256": "png/256/BB.png",
+        "512": "png/512/BB.png"
+      },
+      "cssClass": "bishop.black"
+    },
+    {
+      "name": "NB",
+      "piece": "knight",
+      "color": "black",
+      "unicode": "♞",
+      "fenChar": "n",
+      "svg": "svg/NB.svg",
+      "png": {
+        "48": "png/48/NB.png",
+        "64": "png/64/NB.png",
+        "128": "png/128/NB.png",
+        "240": "png/240/NB.png",
+        "256": "png/256/NB.png",
+        "512": "png/512/NB.png"
+      },
+      "cssClass": "knight.black"
+    },
+    {
+      "name": "PB",
+      "piece": "pawn",
+      "color": "black",
+      "unicode": "♟",
+      "fenChar": "p",
+      "svg": "svg/PB.svg",
+      "png": {
+        "48": "png/48/PB.png",
+        "64": "png/64/PB.png",
+        "128": "png/128/PB.png",
+        "240": "png/240/PB.png",
+        "256": "png/256/PB.png",
+        "512": "png/512/PB.png"
+      },
+      "cssClass": "pawn.black"
+    }
+  ]
+}

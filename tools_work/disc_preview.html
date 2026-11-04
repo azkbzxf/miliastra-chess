@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>disc preview</title>
+<style>
+body{margin:0;background:rgb(18,22,30);font-family:"Microsoft YaHei",sans-serif}
+#stage{position:relative;width:1600px;height:900px}
+.abs{position:absolute;box-sizing:border-box}
+</style></head><body><div id="stage"></div>
+<script>
+const BASE_W=1600, BASE_H=900;
+const boardSide=0.78*BASE_H, cell=boardSide/8;
+const boardLeft=(BASE_W-boardSide)/2, boardBottom=(BASE_H-boardSide)/2;
+const C_LIGHT=[238,228,208], C_DARK=[106,130,150];
+// 圆盘棋子配色（借鉴中国象棋：外圈深色描边 + 内圈底色 + 字符）
+const WHITE_DISC=[250,250,246], WHITE_RING=[38,34,28], WHITE_TXT=[30,28,24];
+const BLACK_DISC=[26,24,22],  BLACK_RING=[238,234,226], BLACK_TXT=[246,244,238];
+const GLYPH={K:'\u265A',Q:'\u265B',R:'\u265C',B:'\u265D',N:'\u265E',P:'\u265F'};
+
+const stage=document.getElementById('stage');
+function rgb(c){return 'rgb('+c[0]+','+c[1]+','+c[2]+')';}
+function div(css){const d=document.createElement('div'); d.className='abs'; Object.assign(d.style,css); return d;}
+
+// 棋盘
+for(let r=0;r<8;r++)for(let f=0;f<8;f++){
+  const dark=(r+f)%2===0;
+  stage.appendChild(div({left:(boardLeft+f*cell)+'px', top:(BASE_H-boardBottom-(r+1)*cell)+'px',
+    width:cell+'px', height:cell+'px', background:rgb(dark?C_DARK:C_LIGHT)}));
+}
+// 坐标
+for(let f=0;f<8;f++){
+  const t=div({left:(boardLeft+f*cell)+'px', top:(BASE_H-boardBottom+cell*0.25)+'px', width:cell+'px',
+    color:rgb([150,158,170]), fontSize:'18px', textAlign:'center'}); t.textContent='abcdefgh'[f]; stage.appendChild(t);
+}
+for(let r=0;r<8;r++){
+  const t=div({left:(boardLeft-cell*0.9)+'px', top:(BASE_H-boardBottom-(r+1)*cell+cell*0.3)+'px', width:cell+'px',
+    color:rgb([150,158,170]), fontSize:'18px', textAlign:'center'}); t.textContent=String(r+1); stage.appendChild(t);
+}
+
+let ctrlCount=0;
+function drawDisc(kind,isWhite,file,rank){
+  const D = cell*0.82;             // 棋子直径 = 格宽 82%（与中国象棋一致）
+  const ring = cell*0.06;          // 描边宽
+  const innerD = D - ring*2;
+  const cx = boardLeft+file*cell+cell/2;
+  const cy = BASE_H-boardBottom-rank*cell-cell/2;
+  const disc = isWhite?WHITE_DISC:BLACK_DISC;
+  const rng  = isWhite?WHITE_RING:BLACK_RING;
+  const txt  = isWhite?WHITE_TXT:BLACK_TXT;
+  // 1) 外圈（实心圆，直径 D）
+  stage.appendChild(div({left:(cx-D/2)+'px', top:(cy-D/2)+'px', width:D+'px', height:D+'px',
+    background:rgb(rng), borderRadius:'50%'}));
+  // 2) 内圈（实心圆，直径 innerD）
+  stage.appendChild(div({left:(cx-innerD/2)+'px', top:(cy-innerD/2)+'px', width:innerD+'px', height:innerD+'px',
+    background:rgb(disc), borderRadius:'50%'}));
+  // 3) 字符
+  const t=div({left:(cx-innerD/2)+'px', top:(cy-innerD/2)+'px', width:innerD+'px', height:innerD+'px',
+    color:rgb(txt), fontSize:Math.floor(cell*0.52)+'px', lineHeight:innerD+'px', textAlign:'center'});
+  t.textContent=GLYPH[kind]; stage.appendChild(t);
+  ctrlCount+=3;
+}
+
+const BACK=['R','N','B','Q','K','B','N','R'];
+for(let f=0;f<8;f++){
+  drawDisc(BACK[f], true, f, 0);   drawDisc('P', true, f, 1);
+  drawDisc('P', false, f, 6);      drawDisc(BACK[f], false, f, 7);
+}
+const note=div({left:'0px', top:(BASE_H-40)+'px', width:BASE_W+'px', fontSize:'20px',
+  color:rgb([238,240,244]), textAlign:'center'});
+note.textContent='圆盘 + 棋符方案（借鉴中国象棋存档画法）：每枚 3 个控件（外圈圆 + 内圈圆 + 字符），32 枚共 '+ctrlCount+' 个';
+stage.appendChild(note);
+</script></body></html>

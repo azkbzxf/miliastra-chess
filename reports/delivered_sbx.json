@@ -1,0 +1,163 @@
+{
+ "sandbox": {
+  "version": "1.0.0",
+  "device": "Keyboard",
+  "canvas": {
+   "width": 1600,
+   "height": 900
+  },
+  "dt": 0.016666666666666666
+ },
+ "verdict": "pass",
+ "timeMs": 3000,
+ "frames": 180,
+ "script": {
+  "started": true,
+  "destroyed": true,
+  "updateEnabled": true
+ },
+ "controls": {
+  "alive": 0,
+  "created": 280,
+  "destroyed": 280,
+  "createdAfterStart": 280,
+  "destroyedAfterStart": 280,
+  "peak": 0,
+  "neverActivated": 0,
+  "leafWithoutListener": 0
+ },
+ "calls": {
+  "maxSettersPerFrame": 0,
+  "totalSetterCalls": 0,
+  "top": [
+   {
+    "name": "SetActive",
+    "count": 830
+   },
+   {
+    "name": "SetVisible",
+    "count": 550
+   },
+   {
+    "name": "game.InstantiateClientUIControl",
+    "count": 280
+   },
+   {
+    "name": "SetPivot",
+    "count": 280
+   },
+   {
+    "name": "SetAnchorMin",
+    "count": 280
+   },
+   {
+    "name": "SetAnchorMax",
+    "count": 280
+   },
+   {
+    "name": "SetSizeDelta",
+    "count": 280
+   },
+   {
+    "name": "SetAnchoredPosition",
+    "count": 280
+   },
+   {
+    "name": "game.DestroyClientUIControl",
+    "count": 280
+   },
+   {
+    "name": "Color.FromRGBA",
+    "count": 239
+   },
+   {
+    "name": "math.isinf",
+    "count": 182
+   },
+   {
+    "name": "AddCursorEventListener",
+    "count": 75
+   },
+   {
+    "name": "RemoveCursorEventListeners",
+    "count": 75
+   },
+   {
+    "name": "print",
+    "count": 8
+   },
+   {
+    "name": "script:EnableUpdate",
+    "count": 2
+   },
+   {
+    "name": "game.ServerSignal",
+    "count": 1
+   },
+   {
+    "name": "game.GetUICanvasSize",
+    "count": 1
+   },
+   {
+    "name": "script:RegisterServerSignalHandler",
+    "count": 1
+   }
+  ]
+ },
+ "errors": [],
+ "warnings": [],
+ "unsupported": [],
+ "logTail": [
+  {
+   "level": "print",
+   "time": 0,
+   "message": "[Chess] 脚本初始化"
+  },
+  {
+   "level": "print",
+   "time": 0,
+   "message": "[Chess] 联机能力探测：发送=false 接收=true"
+  },
+  {
+   "level": "print",
+   "time": 0,
+   "message": "[Chess] 界面构建完成：控件 280 个，画布 1600x900，格宽 87.8"
+  },
+  {
+   "level": "print",
+   "time": 0,
+   "message": "[Chess] 已注册联机信号接收：ChessSync"
+  },
+  {
+   "level": "print",
+   "time": 0,
+   "message": "[Chess] 启动完成：状态=RUNNING 控件=280 联机发送=false 接收=true 同屏=false"
+  },
+  {
+   "level": "print",
+   "time": 0,
+   "message": "[Chess] 容器索引=1 脚本短名=levelScript 画布=1600x900"
+  },
+  {
+   "level": "print",
+   "time": 3000,
+   "message": "[Chess] 脚本停用"
+  },
+  {
+   "level": "print",
+   "time": 3000,
+   "message": "[Chess] 脚本销毁：已释放 280 个控件"
+  }
+ ],
+ "notes": [
+  "枚举值是沙箱自定的占位值，只保证同名同值；需要真值请先加载 annotations.lua。",
+  "布局是按锚点拉伸 + 中心偏移的简化模型，与真机可能有差异。",
+  "runtime_verified 仍然是 pending：沙箱通过不等于真机通过。"
+ ],
+ "extra": {
+  "stage": "done",
+  "fuzz": null,
+  "play": null,
+  "script": "D:\\输出目录\\国际象棋\\tools_work\\_delivered_sandbox.lua"
+ }
+}

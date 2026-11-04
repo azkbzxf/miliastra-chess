@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>shape v2</title>
+<style>
+body{margin:0;background:rgb(18,22,30);font-family:"Microsoft YaHei",sans-serif}
+#stage{position:relative;width:1600px;height:900px}
+.abs{position:absolute;box-sizing:border-box}
+.lbl{position:absolute;color:rgb(238,240,244);text-align:center}
+</style></head><body><div id="stage"></div>
+<script>
+const BASE_W=1600,BASE_H=900;
+const C_LIGHT=[238,228,208],C_DARK=[106,130,150];
+const C_WHITE=[250,250,246],C_BLACK=[26,24,22],OUT_WHITE=[38,34,28],OUT_BLACK=[238,234,226];
+const GLYPH={K:'\u265A',Q:'\u265B',R:'\u265C',B:'\u265D',N:'\u265E',P:'\u265F'};
+// 6 shapes max, single-color silhouette
+const SHAPES={
+ P:[[0.20,0.80,0.60,0.13,'rr'],[0.32,0.46,0.36,0.36,'rr'],[0.38,0.34,0.24,0.16,'sq'],[0.36,0.14,0.28,0.28,'ci']],
+ N:[[0.18,0.82,0.64,0.12,'rr'],[0.30,0.52,0.40,0.32,'rr'],[0.42,0.30,0.22,0.30,'sq',15],[0.36,0.16,0.34,0.18,'sq',-12],[0.62,0.08,0.09,0.16,'sq',10],[0.34,0.24,0.10,0.20,'sq',-25]],
+ B:[[0.20,0.80,0.60,0.13,'rr'],[0.30,0.50,0.40,0.34,'rr'],[0.34,0.28,0.32,0.32,'ci'],[0.46,0.16,0.08,0.16,'sq'],[0.45,0.08,0.10,0.10,'ci']],
+ R:[[0.19,0.80,0.62,0.13,'rr'],[0.28,0.44,0.44,0.38,'sq'],[0.24,0.34,0.52,0.12,'sq'],[0.26,0.22,0.11,0.14,'sq'],[0.445,0.22,0.11,0.14,'sq'],[0.63,0.22,0.11,0.14,'sq']],
+ Q:[[0.18,0.80,0.64,0.13,'rr'],[0.29,0.50,0.42,0.32,'rr'],[0.22,0.38,0.56,0.13,'sq'],[0.24,0.20,0.14,0.14,'ci'],[0.43,0.16,0.14,0.14,'ci'],[0.62,0.20,0.14,0.14,'ci']],
+ K:[[0.18,0.80,0.64,0.13,'rr'],[0.29,0.50,0.42,0.32,'rr'],[0.22,0.38,0.56,0.13,'sq'],[0.455,0.10,0.09,0.30,'sq'],[0.36,0.17,0.28,0.09,'sq']],
+};
+const stage=document.getElementById('stage');
+function rgb(c){return 'rgb('+c[0]+','+c[1]+','+c[2]+')';}
+function div(css){const d=document.createElement('div');d.className='abs';Object.assign(d.style,css);return d;}
+function drawPiece(kind,isW,bx,by,box,mode){
+  const fill=isW?C_WHITE:C_BLACK,out=isW?OUT_WHITE:OUT_BLACK;
+  if(mode==='glyph'){
+    const t=div({left:bx+'px',top:by+'px',width:box+'px',height:box+'px',color:rgb(fill),
+      fontSize:Math.floor(box*0.80)+'px',lineHeight:box+'px',textAlign:'center',
+      textShadow:'0 0 2px '+rgb(out)+',2px 2px 0 '+rgb(out)+',-2px -2px 0 '+rgb(out)+',2px -2px 0 '+rgb(out)+',-2px 2px 0 '+rgb(out)});
+    t.textContent=GLYPH[kind];stage.appendChild(t);return 1;
+  }
+  const D=box*0.88,ring=box*0.048,innerD=D-ring*2;
+  stage.appendChild(div({left:(bx+(box-D)/2)+'px',top:(by+(box-D)/2)+'px',width:D+'px',height:D+'px',background:rgb(out),borderRadius:'50%'}));
+  stage.appendChild(div({left:(bx+(box-innerD)/2)+'px',top:(by+(box-innerD)/2)+'px',width:innerD+'px',height:innerD+'px',background:rgb(fill),borderRadius:'50%'}));
+  let n=2;
+  if(mode==='disc'){
+    const t=div({left:(bx+(box-innerD)/2)+'px',top:(by+(box-innerD)/2)+'px',width:innerD+'px',height:innerD+'px',
+      color:rgb(out),fontSize:Math.floor(innerD*0.80)+'px',lineHeight:innerD+'px',textAlign:'center'});
+    t.textContent=GLYPH[kind];stage.appendChild(t);return 3;
+  }
+  const ib=innerD*0.80,ix=bx+(box-ib)/2,iy=by+(box-ib)/2;
+  for(const sp of SHAPES[kind]){
+    const [x,y,w,h,shape,ang]=sp;
+    stage.appendChild(div({left:(ix+x*ib)+'px',top:(iy+y*ib)+'px',width:(w*ib)+'px',height:(h*ib)+'px',
+      background:rgb(out),borderRadius:shape==='ci'?'50%':(shape==='rr'?'22%':'3px'),
+      transform:ang?('rotate('+ang+'deg)'):''}));n++;
+  }
+  return n;
+}
+function drawBoard(left,top,mode,label){
+  let total=0,pieces=0;
+  for(let r=0;r<8;r++)for(let f=0;f<8;f++){
+    const dark=(r+f)%2===0;
+    stage.appendChild(div({left:(left+f*cell)+'px',top:(top+(7-r)*cell)+'px',width:cell+'px',height:cell+'px',background:rgb(dark?C_DARK:C_LIGHT)}));
+  }
+  const BACK=['R','N','B','Q','K','B','N','R'];
+  for(let f=0;f<8;f++){
+    total+=drawPiece(BACK[f],true,left+f*cell,top+7*cell,cell,mode);
+    total+=drawPiece('P',true,left+f*cell,top+6*cell,cell,mode);
+    total+=drawPiece('P',false,left+f*cell,top+1*cell,cell,mode);
+    total+=drawPiece(BACK[f],false,left+f*cell,top+0*cell,cell,mode);
+    pieces+=4;
+  }
+  const t1=document.createElement('div');t1.className='lbl';
+  Object.assign(t1.style,{left:left+'px',top:(top-58)+'px',width:boardSide+'px',fontSize:'22px'});
+  t1.textContent=label;stage.appendChild(t1);
+  const t2=document.createElement('div');t2.className='lbl';
+  Object.assign(t2.style,{left:left+'px',top:(top-30)+'px',width:boardSide+'px',fontSize:'17px',color:'rgb(150,158,170)'});
+  t2.textContent=pieces+' 枚 · 实测 '+total+' 控件';stage.appendChild(t2);
+  return total;
+}
+const boardSide=420,cell=boardSide/8;
+const GAP=70, totalW=boardSide*3+GAP*2, L0=(BASE_W-totalW)/2, TOP=170;
+drawBoard(L0,TOP,'glyph','① 纯棋符');
+drawBoard(L0+(boardSide+GAP),TOP,'disc','② 圆盘+棋符');
+drawBoard(L0+(boardSide+GAP)*2,TOP,'shape','③ 圆盘+剪影拼装');
+// 放大对比条
+const ZB=110, ZTOP=TOP+boardSide+55;
+const ZL0=(BASE_W-6*(ZB+18))/2;
+const kinds=['K','Q','R','B','N','P'];
+kinds.forEach((k,i)=>{
+  const zx=ZL0+i*(ZB+18);
+  drawPiece(k,true,zx,ZTOP,ZB,'shape');
+  drawPiece(k,false,zx,ZTOP+ZB+10,ZB,'shape');
+});
+const nt=document.createElement('div');nt.className='lbl';
+Object.assign(nt.style,{left:'0px',top:(ZTOP-30)+'px',width:BASE_W+'px',fontSize:'18px',color:'rgb(150,158,170)'});
+nt.textContent='③ 放大：上排白子 / 下排黑子（每枚最多 6 个形状，每形状 1 控件，靠圆盘反差）';
+stage.appendChild(nt);
+</script></body></html>

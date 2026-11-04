@@ -1,0 +1,417 @@
+// 把 lua/levelScript.lua 的棋子层改成三档样式（disc / shape / glyph）
+// 用正则替换，规避 CRLF 多行匹配问题。
+const fs = require('fs');
+const path = require('path');
+
+const FILE = path.join(__dirname, '..', 'lua', 'levelScript.lua');
+let src = fs.readFileSync(FILE, 'utf8');
+const orig = src;
+let edits = 0;
+
+function sub(label, re, repl) {
+  const before = src;
+  src = src.replace(re, repl);
+  if (src === before) throw new Error('MISS: ' + label);
+  edits++;
+  console.log('OK   ' + label);
+}
+
+// ---------- A. CONFIG：图片模板索引改名 ----------
+sub('A CONFIG.PREFAB_IMAGE', /  PREFAB_PIECE_IMAGE   = 0,[^\r\n]*\r\n/, [
+  '  PREFAB_IMAGE         = 0,      -- 图片控件模板索引：圆盘/剪影两档样式必需；缺省 0 = 自动只用「符号」档',
+  '',
+].join('\r\n'));
+
+// ---------- B. 删 PIECE_IMAGE_KEY 与 RULES.PIECE_IMAGE_KEY ----------
+sub('B 删 PIECE_IMAGE_KEY 表', /-- 图片编号表的键名（棋子 \+ 颜色）\r\nlocal PIECE_IMAGE_KEY = \{\r\n[\s\S]*?\r\n\}\r\n/, '');
+sub('B 删 RULES.PIECE_IMAGE_KEY', /RULES\.PIECE_IMAGE_KEY = PIECE_IMAGE_KEY\r\n/, '');
+
+// ---------- C. 插入形状表与样式辅助（放在 RULES.PIECE_LETTER 之前） ----------
+const SHAPE_BLOCK = [
+  '-- 剪影形状表（第三档「圆盘+剪影」用）。每项 { x, y, w, h, 形状, 旋转角度 }，',
+  '-- 坐标归一化到剪影区 0..1；形状取值 "rr" 圆角 / "sq" 方 / "ci" 圆。',
+  '-- 与 tools_work/three_boards2.html 的 SHAPES 完全一致，改一处必须同步另一处。',
+  'local PIECE_SHAPES = {',
+  '  [PAWN] = {',
+  '    { 0.20, 0.80, 0.60, 0.13, "rr", 0 },',
+  '    { 0.32, 0.46, 0.36, 0.36, "rr", 0 },',
+  '    { 0.38, 0.34, 0.24, 0.16, "sq", 0 },',
+  '    { 0.36, 0.14, 0.28, 0.28, "ci", 0 },',
+  '  },',
+  '  [KNIGHT] = {',
+  '    { 0.18, 0.82, 0.64, 0.12, "rr", 0 },',
+  '    { 0.30, 0.52, 0.40, 0.32, "rr", 0 },',
+  '    { 0.42, 0.30, 0.22, 0.30, "sq", 15 },',
+  '    { 0.36, 0.16, 0.34, 0.18, "sq", -12 },',
+  '    { 0.62, 0.08, 0.09, 0.16, "sq", 10 },',
+  '    { 0.34, 0.24, 0.10, 0.20, "sq", -25 },',
+  '  },',
+  '  [BISHOP] = {',
+  '    { 0.20, 0.80, 0.60, 0.13, "rr", 0 },',
+  '    { 0.30, 0.50, 0.40, 0.34, "rr", 0 },',
+  '    { 0.34, 0.28, 0.32, 0.32, "ci", 0 },',
+  '    { 0.46, 0.16, 0.08, 0.16, "sq", 0 },',
+  '    { 0.45, 0.08, 0.10, 0.10, "ci", 0 },',
+  '  },',
+  '  [ROOK] = {',
+  '    { 0.19, 0.80, 0.62, 0.13, "rr", 0 },',
+  '    { 0.28, 0.44, 0.44, 0.38, "sq", 0 },',
+  '    { 0.24, 0.34, 0.52, 0.12, "sq", 0 },',
+  '    { 0.26, 0.22, 0.11, 0.14, "sq", 0 },',
+  '    { 0.445, 0.22, 0.11, 0.14, "sq", 0 },',
+  '    { 0.63, 0.22, 0.11, 0.14, "sq", 0 },',
+  '  },',
+  '  [QUEEN] = {',
+  '    { 0.18, 0.80, 0.64, 0.13, "rr", 0 },',
+  '    { 0.29, 0.50, 0.42, 0.32, "rr", 0 },',
+  '    { 0.22, 0.38, 0.56, 0.13, "sq", 0 },',
+  '    { 0.24, 0.20, 0.14, 0.14, "ci", 0 },',
+  '    { 0.43, 0.16, 0.14, 0.14, "ci", 0 },',
+  '    { 0.62, 0.20, 0.14, 0.14, "ci", 0 },',
+  '  },',
+  '  [KING] = {',
+  '    { 0.18, 0.80, 0.64, 0.13, "rr", 0 },',
+  '    { 0.29, 0.50, 0.42, 0.32, "rr", 0 },',
+  '    { 0.22, 0.38, 0.56, 0.13, "sq", 0 },',
+  '    { 0.455, 0.10, 0.09, 0.30, "sq", 0 },',
+  '    { 0.36, 0.17, 0.28, 0.09, "sq", 0 },',
+  '  },',
+  '}',
+  '',
+  '-- 形状类型 → 图元编号（都取自 CONFIG.PIECE_ASSET）',
+  'local function shape_asset(kind)',
+  '  if kind == "ci" then return CONFIG.PIECE_ASSET.CIRCLE end',
+  '  if kind == "rr" then return CONFIG.PIECE_ASSET.ROUNDED end',
+  '  return CONFIG.PIECE_ASSET.SQUARE',
+  'end',
+  '',
+].join('\r\n');
+
+sub('C 插入 PIECE_SHAPES', /RULES\.PIECE_LETTER = PIECE_LETTER\r\n/, SHAPE_BLOCK + 'RULES.PIECE_LETTER = PIECE_LETTER\r\n');
+// 让规则层也能拿到剪影表（自检/对照用）
+sub('C 导出 RULES.PIECE_SHAPES', /RULES\.PIECE_GLYPH = PIECE_GLYPH\r\n/, 'RULES.PIECE_GLYPH = PIECE_GLYPH\r\nRULES.PIECE_SHAPES = PIECE_SHAPES\r\n');
+
+// ---------- D. create_image 重写 ----------
+const OLD_IMG = [
+  '-- 创建一个图片控件（棋子图标层用）。创建顺序与文本框一致。',
+].join('\r\n');
+sub('D create_image 重写', /-- 创建一个图片控件（棋子图标层用）。创建顺序与文本框一致。\r\nlocal function create_image\(opts\)\r\n[\s\S]*?\r\n  return ctrl\r\nend\r\n/, [
+  '-- 图片来源枚举（按配置名取；沙箱没有 StaticReference，取不到就返回 nil，调用方跳过 SetImage）',
+  'local function piece_image_source_enum()',
+  '  local name = CONFIG.PIECE_IMAGE_SOURCE or "StaticReference"',
+  '  local ok, v = pcall(function() return Enum.ImageSource[name] end)',
+  '  if ok and v ~= nil then return v end',
+  '  ok, v = pcall(function() return Enum.ImageSource.Prefab end)',
+  '  if ok and v ~= nil then return v end',
+  '  return nil',
+  'end',
+  '',
+  '-- 图片拉伸类型枚举（真机是 Stretch，沙箱只有 Simple/Sliced/Tiled/Filled，取不到就返回 nil）',
+  'local function image_type_stretch()',
+  '  local ok, v = pcall(function() return Enum.ImageType.Stretch end)',
+  '  if ok and v ~= nil then return v end',
+  '  ok, v = pcall(function() return Enum.ImageType.Basic end)',
+  '  if ok and v ~= nil then return v end',
+  '  ok, v = pcall(function() return Enum.ImageType.Simple end)',
+  '  if ok and v ~= nil then return v end',
+  '  return nil',
+  'end',
+  '',
+  '-- 给图片控件设置「图元 + 颜色 + 旋转」。真机与沙箱能力不同，全部 pcall 包裹。',
+  'local function image_apply(ctrl, asset, color, rot)',
+  '  if ctrl == nil then return end',
+  '  if asset and asset > 0 then',
+  '    local src = piece_image_source_enum()',
+  '    if src ~= nil then',
+  '      pcall(function() ctrl:SetImage(src, asset) end)',
+  '    end',
+  '  end',
+  '  local it = image_type_stretch()',
+  '  if it ~= nil then pcall(function() ctrl.imageType = it end) end',
+  '  if color ~= nil then pcall(function() ctrl.imageColor = color_of(color) end) end',
+  '  if rot ~= nil and rot ~= 0 then pcall(function() ctrl:SetLocalRotation(0, 0, rot) end) end',
+  'end',
+  '',
+  '-- 创建一个图片控件（圆盘 / 剪影用）。创建顺序与文本框一致。',
+  '-- opts: {name, parent, x, y, w, h, asset, color, rot}',
+  'local function create_image(opts)',
+  '  if CONFIG.PREFAB_IMAGE == 0 then return nil end',
+  '  local ctrl = game.InstantiateClientUIControl(CONFIG.PREFAB_IMAGE, opts.parent)',
+  '  if ctrl == nil then return nil end',
+  '  ctrl:SetPivot(0, 0)',
+  '  ctrl:SetAnchorMin(0, 0)',
+  '  ctrl:SetAnchorMax(0, 0)',
+  '  ctrl:SetSizeDelta(opts.w, opts.h)',
+  '  ctrl:SetAnchoredPosition(opts.x, opts.y)',
+  '  if opts.name then ctrl.name = opts.name end',
+  '  image_apply(ctrl, opts.asset, opts.color, opts.rot)',
+  '  -- 先关闭命中、保持不可见，最后由调用方显式启用',
+  '  if CONFIG.ENABLE_RAYCAST_FIELD then',
+  '    pcall(function() ctrl.raycastTarget = false end)',
+  '  end',
+  '  ctrl:SetActive(false)',
+  '',
+  '  FACTORY.cleanup[#FACTORY.cleanup + 1] = ctrl',
+  '  FACTORY.created = FACTORY.created + 1',
+  '  return ctrl',
+  'end',
+  '',
+].join('\r\n'));
+
+// ---------- E. UI 表：pieceImages → pieceSlots ----------
+sub('E UI.pieceSlots', /  pieceImages = \{\},     -- 图片棋子层（图片模式用）\r\n/, [
+  '  pieceSlots = {},     -- 棋子槽位池（每槽 = 圆盘2 + 棋符1 + 剪影最多6；按 32 个同时在场建）',
+  '  slotShown = 0,       -- 上一帧用到的槽位数（用于把多余槽位隐藏，避免无谓 setter）',
+].join('\r\n') + '\r\n');
+
+// ---------- F. build_board：64 文本 + 64 图片 → 32 槽位 ----------
+const SLOT_FN = [
+  '-- 建棋子槽位池（一次性建好，播放期只移动/改色/切显隐，零创建零销毁）。',
+  '-- 每个槽位 = 圆盘外圈 + 圆盘内圈 + 棋符文本框 + 剪影最多 6 层。',
+  '-- 三档样式共用这一套控件：切样式只改显隐，不新建也不销毁（release 21 硬约束）。',
+  'local function create_piece_slots()',
+  '  local L = UI.L',
+  '  local box = L.cell',
+  '  local D = box * 0.88',
+  '  local ring = box * 0.048',
+  '  local innerD = D - ring * 2',
+  '  local ib = innerD * 0.80',
+  '  local glyphFont = math.floor(innerD * 0.80)',
+  '  local hasImage = (CONFIG.PREFAB_IMAGE ~= 0)',
+  '',
+  '  for i = 1, CONFIG.PIECE_MAX_SLOTS do',
+  '    local slot = { sq = nil, shapes = {} }',
+  '    if hasImage then',
+  '      slot.discOuter = create_image({',
+  '        name = "p" .. i .. "_outer", parent = UI.host,',
+  '        x = 0, y = 0, w = D, h = D, asset = CONFIG.PIECE_ASSET.CIRCLE,',
+  '      })',
+  '      slot.discInner = create_image({',
+  '        name = "p" .. i .. "_inner", parent = UI.host,',
+  '        x = 0, y = 0, w = innerD, h = innerD, asset = CONFIG.PIECE_ASSET.CIRCLE,',
+  '      })',
+  '    end',
+  '    slot.glyph = create_text({',
+  '      name = "p" .. i .. "_glyph", parent = UI.host,',
+  '      x = 0, y = 0, w = innerD, h = innerD,',
+  '      text = "", fontSize = glyphFont,',
+  '      hAlign = Enum.TextHorizontalAlignment.Middle,',
+  '      vAlign = Enum.TextVerticalAlignment.Middle,',
+  '      raycast = false,',
+  '    })',
+  '    if hasImage then',
+  '      for k = 1, CONFIG.PIECE_SHAPE_LAYERS do',
+  '        slot.shapes[k] = create_image({',
+  '          name = "p" .. i .. "_s" .. k, parent = UI.host,',
+  '          x = 0, y = 0, w = ib, h = ib, asset = CONFIG.PIECE_ASSET.SQUARE,',
+  '        })',
+  '      end',
+  '    end',
+  '    UI.pieceSlots[i] = slot',
+  '  end',
+  'end',
+  '',
+].join('\r\n');
+
+sub('F build_board 换槽位', /  -- 棋子 64（一次性建好，播放期不再创建）\r\n[\s\S]*?\r\n  end\r\n/, [
+  '  -- 棋子槽位池（32 个同时在场；播放期零创建）',
+  '  create_piece_slots()',
+  '',
+].join('\r\n'));
+
+// 槽位函数插在 build_board 之前
+sub('F 插入 create_piece_slots', /local function build_board\(\)\r\n/, SLOT_FN + 'local function build_board()\r\n');
+
+// ---------- G. 按钮文案 ----------
+sub('G btnStyle 文案', /bg = CONFIG\.COLOR\.BTN_BG, text = CONFIG\.TEXT\.BTN_STYLE_IMAGE,\r\n/, [
+  'bg = CONFIG.COLOR.BTN_BG, text = CONFIG.TEXT.BTN_STYLE_DISC,',
+  '',
+].join('\r\n'));
+sub('G 注释改三档', /  -- 第五个按钮：棋子样式切换（图片 \/ 符号）\r\n/, '  -- 第五个按钮：棋子样式切换（圆盘 → 剪影 → 符号 循环）\r\n');
+
+// ---------- H. GAME.pieceMode → pieceStyle ----------
+sub('H GAME.pieceStyle', /  pieceMode = "glyph",    -- 棋子显示模式："image" 图片 \/ "glyph" 符号（启动时按配置决定）\r\n/, [
+  '  pieceStyle = "glyph",  -- 棋子样式："disc" 圆盘+棋符 / "shape" 圆盘+剪影 / "glyph" 纯棋符',
+  '',
+].join('\r\n'));
+
+// ---------- I. 删 piece_images_ready / piece_image_source_enum（改由前面提供） ----------
+sub('I 删旧可用性判断', /-- 图片棋子是否可用：12 个编号必须全部非 0，且图片模板索引非 0\r\nlocal function piece_images_ready\(\)\r\n[\s\S]*?\r\nend\r\n\r\n-- 图片来源枚举（按配置名取；取不到就用 StaticReference，API 文档 L520）\r\nlocal function piece_image_source_enum\(\)\r\n[\s\S]*?\r\nend\r\n\r\n/, '');
+
+// ---------- J. render_pieces 重写 ----------
+const RENDER_FN = [
+  '-- 样式是否可用：符号档永远可用；圆盘/剪影档需要图片控件模板索引已填（且槽位已建）',
+  'local function piece_style_available(style)',
+  '  if style == "glyph" then return true end',
+  '  if CONFIG.PREFAB_IMAGE == 0 then return false end',
+  '  local slot = UI.pieceSlots and UI.pieceSlots[1]',
+  '  if slot == nil then return false end',
+  '  return slot.discOuter ~= nil and slot.discInner ~= nil',
+  'end',
+  '',
+  '-- 样式 → 按钮文案',
+  'local function piece_style_label(style)',
+  '  if style == "shape" then return CONFIG.TEXT.BTN_STYLE_SHAPE end',
+  '  if style == "disc" then return CONFIG.TEXT.BTN_STYLE_DISC end',
+  '  return CONFIG.TEXT.BTN_STYLE_GLYPH',
+  'end',
+  '',
+  '-- 样式 → 中文名（提示条用）',
+  'local function piece_style_name_cn(style)',
+  '  if style == "shape" then return "圆盘+剪影" end',
+  '  if style == "disc" then return "圆盘+棋符" end',
+  '  return "纯棋符"',
+  'end',
+  '',
+  '-- 把一个槽位摆到某格并画成指定棋子',
+  'local function paint_slot(slot, p, bx, by, style)',
+  '  local L = UI.L',
+  '  local box = L.cell',
+  '  local D = box * 0.88',
+  '  local ring = box * 0.048',
+  '  local innerD = D - ring * 2',
+  '  local ib = innerD * 0.80',
+  '  local isWhite = p > 0',
+  '  local fill = isWhite and CONFIG.COLOR.WHITE_PIECE or CONFIG.COLOR.BLACK_PIECE',
+  '  local outline = isWhite and CONFIG.COLOR.WHITE_OUTLINE or CONFIG.COLOR.BLACK_OUTLINE',
+  '',
+  '  if slot.discOuter then',
+  '    slot.discOuter:SetAnchoredPosition(bx + (box - D) / 2, by + (box - D) / 2)',
+  '  end',
+  '  if slot.discInner then',
+  '    slot.discInner:SetAnchoredPosition(bx + (box - innerD) / 2, by + (box - innerD) / 2)',
+  '  end',
+  '  if slot.glyph then',
+  '    slot.glyph:SetAnchoredPosition(bx + (box - innerD) / 2, by + (box - innerD) / 2)',
+  '    slot.glyph.text = PIECE_GLYPH[p] or PIECE_LETTER[p]',
+  '  end',
+  '',
+  '  if style == "glyph" then',
+  '    -- 纯棋符：只有文本框，白方白字深描边、黑方深字浅描边',
+  '    if slot.discOuter then ui_set_active(slot.discOuter, false) end',
+  '    if slot.discInner then ui_set_active(slot.discInner, false) end',
+  '    for k = 1, #slot.shapes do ui_set_active(slot.shapes[k], false) end',
+  '    if slot.glyph then',
+  '      slot.glyph.fontColor = color_of(fill)',
+  '      slot.glyph.enableOutline = true',
+  '      slot.glyph.outlineColor = color_of(outline)',
+  '      ui_set_active(slot.glyph, true)',
+  '    end',
+  '    return',
+  '  end',
+  '',
+  '  -- 圆盘两档共用：外圈=描边色、内圈=棋子色',
+  '  image_apply(slot.discOuter, CONFIG.PIECE_ASSET.CIRCLE, outline, nil)',
+  '  image_apply(slot.discInner, CONFIG.PIECE_ASSET.CIRCLE, fill, nil)',
+  '  ui_set_active(slot.discOuter, true)',
+  '  ui_set_active(slot.discInner, true)',
+  '',
+  '  if style == "disc" then',
+  '    -- 圆盘+棋符：棋符画在圆盘上，字色=描边色（无描边，避免糊成一团）',
+  '    for k = 1, #slot.shapes do ui_set_active(slot.shapes[k], false) end',
+  '    if slot.glyph then',
+  '      slot.glyph.fontColor = color_of(outline)',
+  '      slot.glyph.enableOutline = false',
+  '      ui_set_active(slot.glyph, true)',
+  '    end',
+  '    return',
+  '  end',
+  '',
+  '  -- 圆盘+剪影：棋符隐去，改用单色剪影（色=描边色，白子深剪影、黑子浅剪影）',
+  '  if slot.glyph then ui_set_active(slot.glyph, false) end',
+  '  local kind = (p < 0) and -p or p   -- 黑子是负数，形状按兵种取',
+  '  local shapes = PIECE_SHAPES[kind] or PIECE_SHAPES[PAWN]',
+  '  local ix = bx + (box - ib) / 2',
+  '  local iy = by + (box - ib) / 2',
+  '  for k = 1, #slot.shapes do',
+  '    local layer = slot.shapes[k]',
+  '    local sp = shapes[k]',
+  '    if sp == nil then',
+  '      ui_set_active(layer, false)',
+  '    else',
+  '      local sx, sy, sw, sh, sk, ang = sp[1], sp[2], sp[3], sp[4], sp[5], sp[6]',
+  '      layer:SetSizeDelta(sw * ib, sh * ib)',
+  '      layer:SetAnchoredPosition(ix + sx * ib, iy + sy * ib)',
+  '      image_apply(layer, shape_asset(sk), outline, ang)',
+  '      ui_set_active(layer, true)',
+  '    end',
+  '  end',
+  'end',
+  '',
+  '-- 把一个槽位的所有层隐藏',
+  'local function hide_slot(slot)',
+  '  if slot == nil then return end',
+  '  if slot.discOuter then ui_set_active(slot.discOuter, false) end',
+  '  if slot.discInner then ui_set_active(slot.discInner, false) end',
+  '  if slot.glyph then ui_set_active(slot.glyph, false) end',
+  '  for k = 1, #slot.shapes do ui_set_active(slot.shapes[k], false) end',
+  'end',
+  '',
+  '-- 棋子渲染：按当前样式把 64 格里的棋子分配给 32 个槽位。播放期零创建零销毁。',
+  'local function render_pieces()',
+  '  if not GAME.uiReady then return end',
+  '  if UI.pieceSlots == nil or UI.pieceSlots[1] == nil then return end',
+  '  local style = GAME.pieceStyle',
+  '  if not piece_style_available(style) then style = "glyph" end',
+  '',
+  '  local used = 0',
+  '  for sq = 0, 63 do',
+  '    local p = GAME.st.board[sq]',
+  '    if p ~= 0 then',
+  '      used = used + 1',
+  '      local slot = UI.pieceSlots[used]',
+  '      if slot == nil then break end',
+  '      slot.sq = sq',
+  '      local bx, by = LAYOUT.square_pos(UI.L, sq)',
+  '      paint_slot(slot, p, bx, by, style)',
+  '    end',
+  '  end',
+  '  -- 把超出实际棋子数的槽位隐藏（只隐藏上一帧显示过的，避免无谓 setter）',
+  '  local prev = UI.slotShown or 0',
+  '  local maxHide = used > prev and used or prev',
+  '  for i = used + 1, maxHide do',
+  '    hide_slot(UI.pieceSlots[i])',
+  '    UI.pieceSlots[i].sq = nil',
+  '  end',
+  '  UI.slotShown = used',
+  'end',
+  '',
+].join('\r\n');
+
+sub('J render_pieces 重写', /local function render_pieces\(\)\r\n  if not GAME\.uiReady then return end\r\n[\s\S]*?\r\n  end\r\nend\r\n/, RENDER_FN);
+
+// ---------- K. 按钮点击：三档循环 ----------
+sub('K 按钮三档循环', /  -- 棋子样式切换：图片 ↔ 符号。图片不可用时不切换，只提示。\r\n  register_click\(UI\.panel\.hitStyle, function\(\)\r\n[\s\S]*?\r\n    return true\r\n  end\)\r\n/, [
+  '  -- 棋子样式切换：按 CONFIG.PIECE_STYLE_CYCLE 循环，不可用的样式自动跳过。',
+  '  register_click(UI.panel.hitStyle, function()',
+  '    local cycle = CONFIG.PIECE_STYLE_CYCLE',
+  '    local cur = GAME.pieceStyle',
+  '    local startIdx = 1',
+  '    for i = 1, #cycle do',
+  '      if cycle[i] == cur then startIdx = i; break end',
+  '    end',
+  '    local nextStyle = cur',
+  '    for step = 1, #cycle do',
+  '      local idx = ((startIdx - 1 + step) % #cycle) + 1',
+  '      if piece_style_available(cycle[idx]) then nextStyle = cycle[idx]; break end',
+  '    end',
+  '    GAME.pieceStyle = nextStyle',
+  '    if UI.panel.btnStyle then UI.panel.btnStyle.text = piece_style_label(nextStyle) end',
+  '    if UI.panel.hint then UI.panel.hint.text = "棋子样式：" .. piece_style_name_cn(nextStyle) end',
+  '    render_pieces()',
+  '    return true',
+  '  end)',
+  '',
+].join('\r\n'));
+
+// ---------- L. OnStart 初始样式 ----------
+sub('L OnStart 初始样式', /  -- 按配置决定初始棋子样式：默认 image，但 12 个编号不全时自动用 glyph\r\n[\s\S]*?\r\n  end\r\n/, [
+  '  -- 按配置决定初始棋子样式；圆盘/剪影需要图片控件模板索引，没填就自动回落「纯棋符」',
+  '  GAME.pieceStyle = CONFIG.DEFAULT_PIECE_STYLE',
+  '  if not piece_style_available(GAME.pieceStyle) then GAME.pieceStyle = "glyph" end',
+  '  if UI.panel.btnStyle then UI.panel.btnStyle.text = piece_style_label(GAME.pieceStyle) end',
+  '',
+].join('\r\n'));
+
+fs.writeFileSync(FILE, src, 'utf8');
+console.log('\n完成：' + edits + ' 处替换；' + orig.length + ' → ' + src.length + ' 字节');

@@ -1,0 +1,35 @@
+# ===== 第三方素材与工具（体积大、可重新获取，不入库）=====
+# 千星静态引用图标全量缓存（1517 个 PNG，来自 oss.070077.xyz 白名单）
+tools_work/icons/
+# 第三方工具箱（Miliastra-toolbox-primitive-shape，含 wasm/web 资产）
+tools_work/toolbox/
+# 棋子拟合中间产物（大图 + 过程文件）
+tools_work/fit_out/
+# Python 缓存
+__pycache__/
+*.pyc
+
+# ===== 过程截图与本地报告（打点用，不是交付物）=====
+# 例外：docs/images/ 下的截图是 README 用的正式图，必须入库
+reports/*.png
+reports/*.jpg
+reports/glyphtest/
+
+# ===== 音效试听素材（游戏音频资产，版权归米哈游，绝不入库）=====
+# 本地试听用，由 tools_work/make_sfx_preview.mjs 从资产 CDN 拉取生成
+docs/audio-preview/
+docs/音效试听.html
+
+# ===== 备份与临时文件 =====
+*.bak
+*.bak.*
+_ls_backup.lua
+tmp/
+.dsh/
+
+# ===== 编辑器 / 系统 =====
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

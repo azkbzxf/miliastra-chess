@@ -1,0 +1,110 @@
+黑白棋局（千星奇域 2D 国际象棋）
+第三方素材与授权声明 / Third-Party Notices
+===========================================================
+
+本文件说明本仓库中**不是我们原创**的部分及其授权条件。
+仓库采用「按部分授权」的方式：不同目录适用不同的许可证，详见下表。
+
+| 部分 | 路径 | 授权 |
+|---|---|---|
+| 本项目代码、文档、棋盘界面设计 | `lua/` `sim/` `proto/` `tools_work/` `docs/` `out/交付包/` | MIT（见 `LICENSE`） |
+| cburnett 棋子素材原件（SVG / PNG / CSS / 元数据） | `out/棋子素材-en-croissant/` | **CC BY-SA 3.0** |
+| 由上述素材拟合出的棋子几何数据 | `docs/pieces-fit-generated.lua` `.json`、`docs/pieces.css`、`lua/levelScript.lua` 中的 `PIECE_ART` 表 | **CC BY-SA 3.0**（同上，属演绎作品） |
+| 游戏音频文件 | —— | **不含**，见第 3 节 |
+
+
+1) cburnett 国际象棋字型 —— CC BY-SA 3.0
+-----------------------------------------------------------
+
+作者      Colin M.L. Burnett
+授权      Creative Commons Attribution-ShareAlike 3.0 Unported（CC BY-SA 3.0）
+授权文本  https://creativecommons.org/licenses/by-sa/3.0/
+原始来源  Wikimedia Commons 的 SVG chess pieces
+          https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces
+提取自    en-croissant（开源国际象棋 GUI，MIT）
+          https://github.com/franciscoBSalgueiro/en-croissant
+本仓库路径 out/棋子素材-en-croissant/
+
+### 署名要求
+
+使用、分发或以本仓库中的棋子素材（或其演绎作品）创作时，必须保留：
+  - 作者：Colin M.L. Burnett
+  - 来源：Wikimedia Commons / en-croissant
+  - 授权：CC BY-SA 3.0（含链接）
+
+### 相同方式共享（ShareAlike）要求
+
+CC BY-SA 3.0 是「传染性」授权：基于这些棋子素材的**演绎作品**，
+必须以**相同或兼容的授权**分发。因此：
+
+  - `out/棋子素材-en-croissant/` 下的 SVG / PNG / CSS / JSON 原件
+    以及 `spritesheet_512.png`、`preview_*.png`、`pieces.json`
+    → **整体按 CC BY-SA 3.0 分发**，不是 MIT。
+  - `docs/pieces-fit-generated.lua`、`docs/pieces-fit-generated.json`、
+    `docs/pieces.css` 与 `lua/levelScript.lua` 里的 `PIECE_ART` 几何表，
+    是用算法拟合 cburnett 剪影得到的**演绎数据** → 一并**按 CC BY-SA 3.0 分发**。
+  - 除上述部分外的其余代码与文档（游戏逻辑、UI、动画、网络、文档）
+    → 按 **MIT** 分发。
+
+**为什么可以这样拆**：MIT 是宽松许可，允许被并入适用更强义务的整体发行；
+反过来不成立。所以把 CC BY-SA 部分单独标出、其余部分 MIT，
+是能满足 ShareAlike 义务的最小改动方案。若你只取用代码而不需要棋子素材，
+可以**直接删掉** `out/棋子素材-en-croissant/` 以及 `PIECE_ART` 表以外的内容仍能独立使用；
+如需完全自由的再分发，也可以把棋子形状换成你自己拟合的素材。
+
+> 这不是法律意见。**商用前请自行复核** CC BY-SA 3.0 条款，
+> 或把棋子素材替换为无 ShareAlike 义务的素材。
+
+### 本项目实际怎么用它
+
+千星奇域的图片控件**不能上传自定义 PNG**（只接受官方预设白名单），
+所以运行时脚本里**不包含任何图片**：棋子是把 cburnett 剪影用算法拟合成
+「矩形 / 椭圆 / 三角形」的并集，再由平台的基础图元逐个染色绘制出来的。
+素材原件仅作为**拟合算法的输入与对照图**留在仓库里。
+
+
+2) 千星奇域 / 原神 相关资产
+-----------------------------------------------------------
+
+「原神」「千星奇域」「千星沙箱」（Genshin Impact / Miliastra Wonderland）及相关名称、
+界面、图标、音乐与音效资产的版权归**米哈游 / HoYoverse** 所有。
+
+本项目是**非官方的玩家创作**，与米哈游无隶属关系，也未获得其背书或授权。
+仓库中的 Lua 脚本使用的是千星沙箱**公开文档里记载的客户端 API**，
+属于在平台规则内的玩家创作范畴；使用者仍需遵守
+《原神》用户协议与千星沙箱的素材使用条款。
+
+
+3) 音频：本仓库不包含任何音频文件
+-----------------------------------------------------------
+
+游戏音效**不以文件形式分发**。脚本通过平台接口按**资产 ID** 引用：
+
+    game.PlayAudio2D(audioId)      -- audioId 为整数，由平台提供
+
+代码里出现的音效 ID（例如 `50888` 表示「按钮点击_轻_通用_03」）是
+**平台公开资产清单里的事实标识符**，用于指示该处应当播放哪个音效；
+音频文件本身既不包含、也不随仓库分发。
+
+`docs/音效试听.html` 与 `docs/audio-preview/` 是本地试听工具与缓存，
+由 `tools_work/make_sfx_preview.mjs` 从资产 CDN 按需拉取生成，
+已被 `.gitignore` 排除，**不在仓库内**。
+
+在不同项目/账号中复用时，这些 ID 是否可用取决于平台账号的资产授权，
+请以编辑器「音效资产」面板实际显示为准。
+
+
+4) 开发期使用的第三方工具（不随仓库分发）
+-----------------------------------------------------------
+
+以下依赖**未**被打包进本仓库，仅记录用途与授权，方便复现验证环境：
+
+  luaparse        Lua 5.3 语法解析（用于 `tools_work/lua_check.cjs`）      MIT
+  fengari         Lua VM 的 JS 实现（用于沙箱/规则层测试）                 MIT
+  Playwright/Edge 打开 Demo 取回自检结果与截图（`tools_work/verify_demo.mjs`） Apache-2.0
+  python-chess    生成 perft 标准答案（`tools_work/perft/gen_ref.py`）      GPL-3.0
+                  ※ 仅用于**生成对照数据**，未链接进交付代码；
+                    其输出（perft 数字）是数学结果，不受版权保护。
+
+`tools_work/` 下的脚本引用了几处本机绝对路径（如沙箱目录），
+在别的机器上跑需要自行改写，属于**开发脚手架**而非交付件。

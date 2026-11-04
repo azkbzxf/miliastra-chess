@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#12161e;font-family:"Segoe UI Symbol","Segoe UI",sans-serif}
+.stage{width:1600px;height:900px;position:relative;background:#12161e}
+h1{position:absolute;left:40px;top:20px;color:#eef0f4;font-size:32px;margin:0}
+.board{position:absolute;left:449px;top:99px;width:702px;height:702px}
+.cell{position:absolute;width:87.75px;height:87.75px;display:flex;align-items:center;justify-content:center;
+  font-size:52px;line-height:1;box-sizing:border-box}
+.light{background:rgb(238,228,208)}.dark{background:rgb(106,130,150)}
+.w{color:rgb(250,250,246);text-shadow:0 0 2px #221e18,1px 1px 0 #221e18,-1px -1px 0 #221e18,1px -1px 0 #221e18,-1px 1px 0 #221e18}
+.b{color:rgb(26,24,22);text-shadow:0 0 2px #eeeae2,1px 1px 0 #eeeae2,-1px -1px 0 #eeeae2,1px -1px 0 #eeeae2,-1px 1px 0 #eeeae2}
+.panel{position:absolute;left:1248px;top:99px;width:352px;height:702px;background:rgb(26,32,44)}
+.note{position:absolute;left:40px;top:120px;width:380px;color:#969eaa;font-size:20px;line-height:1.7}
+</style></head><body>
+<div class="stage">
+  <h1>方案 A：Unicode 棋符（每枚棋子 1 个文本框控件）</h1>
+  <div class="note">实心棋符 U+265A..U+265F。<br>白方：白字 + 深描边；黑方：黑字 + 浅描边。<br>不依赖素材库，任何分辨率下都清晰。<br>控件成本：棋盘 64 + 棋子 32 = 96。</div>
+  <div class="board" id="board"></div>
+  <div class="panel"></div>
+</div>
+<script>
+const G={p:"\u265F",n:"\u265E",b:"\u265D",r:"\u265C",q:"\u265B",k:"\u265A"};
+const init=[["r","n","b","q","k","b","n","r"],["p","p","p","p","p","p","p","p"]];
+const b=document.getElementById("board");
+function sq(r,f,glyph,side){
+  const d=document.createElement("div");
+  d.className="cell "+(((r+f)%2===0)?"dark":"light");
+  d.style.left=(f*87.75)+"px"; d.style.top=((7-r)*87.75)+"px";
+  if(glyph){ d.textContent=glyph; d.className+=" "+side; }
+  b.appendChild(d); return d;
+}
+for(let r=0;r<8;r++)for(let f=0;f<8;f++)sq(r,f,"","");
+for(let f=0;f<8;f++){
+  const w=sq(0,f,G[init[0][f]],"w"); const bl=sq(7,f,G[init[1][f]],"b");
+  w.style.zIndex=5; bl.style.zIndex=5;
+}
+for(let f=0;f<8;f++){ sq(1,f,G.p,"w").style.zIndex=5; sq(6,f,G.p,"b").style.zIndex=5; }
+</script>
+</body></html>

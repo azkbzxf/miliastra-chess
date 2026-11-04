@@ -1,0 +1,1940 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>黑白棋局</title>
+<!--
+  黑白棋局 · 网页 Demo（开发基准，不是最终交付物）
+  ================================================
+  设计基准：1600 × 900（电脑 16:9）
+  基准来源：docs/策划案.md 10.1–10.7
+  生成时间：2026-10-31 12:10 (Asia/Shanghai)
+  版本：v2（棋子两档：纯棋符 / 圆盘+棋符）
+  规则来源：tools_work/chess_rules.js（与 lua/levelScript.lua 第 3 区 RULES 逐函数对照，
+           两者用同一套 perft 标准答案交叉验证）
+
+  本文件是开发基准，不是最终交付物。
+  - 交付给用户的版本：默认无任何调试显示
+  - 量测：URL 加 ?measure=1 → 输出 MEASURE_RESULT 到 console
+  - 自检：URL 加 ?selftest=1 → 跑 window.__selfTest() 并把结果写进 title
+  - 调试：URL 加 ?debug=1 → 显示参考线/中心点/元素编号
+-->
+<style>
+  :root {
+    /* 设计基准（唯一声明处） */
+    --base-w: 1600px;
+    --base-h: 900px;
+
+    /* 配色（与策划案 10.6 逐项一致） */
+    --c-bg: rgb(18,22,30);
+    --c-sq-light: rgb(238,228,208);
+    --c-sq-dark: rgb(106,130,150);
+    --c-sel: rgb(250,198,74);
+    --c-legal: rgb(108,186,130);
+    --c-last: rgb(176,196,226);
+    --c-check: rgb(214,70,66);
+    --c-panel: rgb(26,32,44);
+    --c-panel-sec: rgb(34,42,56);
+    --c-text: rgb(238,240,244);
+    --c-text-sub: rgb(150,158,170);
+    --c-btn: rgb(58,74,104);
+    --c-btn-text: rgb(244,246,250);
+    --c-btn-dis: rgb(40,46,58);
+    --c-btn-dis-text: rgb(110,116,128);
+    --c-clock-low: rgb(214,74,74);
+    --c-wp: rgb(250,250,246);
+    --c-wp-ol: rgb(38,34,28);
+    --c-bp: rgb(26,24,22);
+    --c-bp-ol: rgb(238,234,226);
+    --c-overlay: rgba(10,12,18,0.9);
+  }
+
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #0a0d13;
+    overflow: hidden;
+    font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+  }
+
+  /* 外层容器：等比缩放到视口，保持 16:9 基准 */
+  /* 视口容器：只做裁切，不参与布局计算 */
+  #viewport {
+    position: absolute; inset: 0;
+    overflow: hidden;
+  }
+  /* 舞台：固定 1600x900 设计尺寸，用 translate(-50%,-50%) 把中心锚在视口中心，
+     再叠加 scale。**不能用 flex 居中**：flex 会按 1600 的布局尺寸排版，
+     缩放后舞台相对容器的偏移不会跟着缩，导致右侧内容被切到屏幕外
+     （实测手机 16:9 下 panelBg.right=1364 > 视口 1280）。 */
+  #stage {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: var(--base-w); height: var(--base-h);
+    background: var(--c-bg);
+    transform-origin: center center;
+    transform: translate(-50%, -50%) scale(1);
+    overflow: hidden;
+  }
+
+  /* 所有元素：绝对定位，left/bottom 以 stage 左下为原点（与策划案一致） */
+  .el { position: absolute; box-sizing: border-box; }
+
+  /* 棋盘格 */
+  .sq { z-index: 1; }
+  .hit { z-index: 2; cursor: pointer; }
+  .last { z-index: 3; pointer-events: none; }
+  .checkwarn { z-index: 4; pointer-events: none; }
+  .sel, .legal { z-index: 5; pointer-events: none; }
+  .piece {
+    z-index: 6; pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1; user-select: none;
+  }
+  .piece-disc { z-index: 6; pointer-events: none; border-radius: 50%; }
+  .coord { z-index: 7; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+  .hint { z-index: 8; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+  .panel { z-index: 9; }
+  .panel-el { z-index: 10; display: flex; align-items: center; justify-content: center; }
+  .btn { z-index: 11; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; }
+  .btn-hit { z-index: 12; cursor: pointer; }
+
+  /* 弹窗 */
+  .overlay { z-index: 20; background: var(--c-overlay); }
+  .dlg-bg { z-index: 21; background: var(--c-panel); border-radius: 6px; }
+  .dlg-el { z-index: 22; display: flex; align-items: center; justify-content: center; text-align: center; }
+  .dlg-btn { z-index: 23; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; }
+  .dlg-btn-hit { z-index: 24; cursor: pointer; }
+  .hidden { display: none !important; }
+
+  /* 调试显示（默认关闭） */
+  #debugLayer { position: absolute; inset: 0; z-index: 30; pointer-events: none; display: none; }
+  #debugLayer.on { display: block; }
+  #debugLayer .anchor-line { position: absolute; border: 1px dashed #ff00ff88; }
+  #debugLayer .center-cross::before,
+  #debugLayer .center-cross::after {
+    content: ""; position: absolute; background: #00ffffaa;
+  }
+  #debugLayer .center-cross::before { left: 50%; top: 0; width: 1px; height: 100%; }
+  #debugLayer .center-cross::after { top: 50%; left: 0; height: 1px; width: 100%; }
+</style>
+<script>window.addEventListener("error",function(e){try{var p=new URLSearchParams(location.search).get("reportPort");if(p)fetch("http://127.0.0.1:"+p+"/report",{method:"POST",body:JSON.stringify({ok:false,error:"PAGE_ERROR: "+(e.message||"")+" @ "+(e.filename||"")+":"+(e.lineno||0)})});}catch(x){}});window.addEventListener("unhandledrejection",function(e){try{var p=new URLSearchParams(location.search).get("reportPort");if(p)fetch("http://127.0.0.1:"+p+"/report",{method:"POST",body:JSON.stringify({ok:false,error:"PAGE_REJECT: "+(e.reason&&e.reason.message||e.reason)})});}catch(x){}});</script>
+</head>
+<body>
+<div id="viewport">
+  <div id="stage" data-base-w="1600" data-base-h="900">
+    <div id="board"></div>
+    <div id="overlayLayer"></div>
+    <div id="debugLayer"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+   规则引擎（内联，与 tools_work/chess_rules.js 相同；由 tools_work/build_demo.cjs 注入）
+   ============================================================================ */
+/* ---- perft 用例（从 lua/levelScript.lua 抽取） ---- */
+// 由 tools_work/build_demo_rules.cjs 从 lua/levelScript.lua 抽取，勿手改
+const PERFT_CASES = [
+  {
+    "name": "initial",
+    "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "d1": 20,
+    "d2": 400,
+    "d3": 8902
+  },
+  {
+    "name": "kiwipete",
+    "fen": "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+    "d1": 48,
+    "d2": 2039,
+    "d3": 97862
+  },
+  {
+    "name": "pos3",
+    "fen": "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+    "d1": 14,
+    "d2": 191,
+    "d3": 2812
+  },
+  {
+    "name": "pos4",
+    "fen": "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
+    "d1": 6,
+    "d2": 264,
+    "d3": 9467
+  },
+  {
+    "name": "pos5",
+    "fen": "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
+    "d1": 44,
+    "d2": 1486,
+    "d3": 62379
+  },
+  {
+    "name": "pos6",
+    "fen": "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
+    "d1": 46,
+    "d2": 2079,
+    "d3": 89890
+  }
+];
+const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+/* ---- 规则引擎 ---- */
+// tools_work/chess_rules.js
+// 国际象棋走法引擎（JS 版）—— 与 lua/levelScript.lua 第 3 区 RULES **逐函数对照移植**。
+// 来源：Lua 规则层（perft 深度 3 与 python-chess 标准答案全部一致）。
+// 移植纪律：函数名、算法结构、边界处理与 Lua 保持一致；改一处必须两处同步。
+//
+// 棋盘：64 格数组，格 0 = a1，格 7 = h1，格 56 = a8，格 63 = h8
+//   rank = sq >> 3（0 = 第 1 横排），file = sq & 7（0 = a 列）
+// 棋子：正数 = 白，负数 = 黑；1=兵 2=马 3=象 4=车 5=后 6=王
+"use strict";
+
+const PAWN = 1, KNIGHT = 2, BISHOP = 3, ROOK = 4, QUEEN = 5, KING = 6;
+const WHITE = 1, BLACK = -1;
+
+// 方向表：(dr, df) 显式二元组。【教训】不能用单整数 delta + 取模拆分（负列差会拆错，马步丢子）
+const KNIGHT_DIRS = [[2,1],[2,-1],[1,2],[1,-2],[-1,2],[-1,-2],[-2,1],[-2,-1]];
+const KING_DIRS   = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+const BISHOP_DIRS = [[1,1],[1,-1],[-1,-1],[-1,1]];
+const ROOK_DIRS   = [[1,0],[0,1],[-1,0],[0,-1]];
+const QUEEN_DIRS  = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+
+const rankOf = (sq) => sq >> 3;
+const fileOf = (sq) => sq & 7;
+
+// 从 sq 沿 (dr,df) 走一步，越界返回 -1
+function shift(sq, dr, df) {
+  const r = (sq >> 3) + dr, f = (sq & 7) + df;
+  if (r < 0 || r > 7 || f < 0 || f > 7) return -1;
+  return r * 8 + f;
+}
+
+const CHAR_TO_PIECE = {
+  p: -PAWN, n: -KNIGHT, b: -BISHOP, r: -ROOK, q: -QUEEN, k: -KING,
+  P: PAWN, N: KNIGHT, B: BISHOP, R: ROOK, Q: QUEEN, K: KING,
+};
+const PIECE_TO_CHAR = {
+  [-PAWN]:"p", [-KNIGHT]:"n", [-BISHOP]:"b", [-ROOK]:"r", [-QUEEN]:"q", [-KING]:"k",
+  [PAWN]:"P", [KNIGHT]:"N", [BISHOP]:"B", [ROOK]:"R", [QUEEN]:"Q", [KING]:"K",
+};
+const PIECE_LETTER = {
+  [-PAWN]:"P", [-KNIGHT]:"N", [-BISHOP]:"B", [-ROOK]:"R", [-QUEEN]:"Q", [-KING]:"K",
+  [PAWN]:"P", [KNIGHT]:"N", [BISHOP]:"B", [ROOK]:"R", [QUEEN]:"Q", [KING]:"K",
+};
+
+// ---------------- FEN ----------------
+function parseFen(fen) {
+  const st = {
+    board: new Int8Array(64),
+    turn: WHITE,
+    castling: { K:false, Q:false, k:false, q:false },
+    ep: -1,
+    halfmove: 0,
+    fullmove: 1,
+    history: [],
+  };
+  const parts = fen.trim().split(/\s+/);
+  if (parts.length < 4) throw new Error("FEN 字段不足: " + fen);
+
+  let r = 7, f = 0;
+  for (const ch of parts[0]) {
+    if (ch === "/") { r--; f = 0; }
+    else if (ch >= "1" && ch <= "8") { f += Number(ch); }
+    else {
+      const piece = CHAR_TO_PIECE[ch];
+      if (!piece) throw new Error("FEN 非法棋子: " + ch);
+      st.board[r * 8 + f] = piece;
+      f++;
+    }
+  }
+  st.turn = parts[1] === "w" ? WHITE : BLACK;
+  if (parts[2] && parts[2] !== "-") {
+    for (const ch of parts[2]) {
+      if (ch === "K") st.castling.K = true;
+      else if (ch === "Q") st.castling.Q = true;
+      else if (ch === "k") st.castling.k = true;
+      else if (ch === "q") st.castling.q = true;
+    }
+  }
+  if (parts[3] && parts[3] !== "-") {
+    const fc = parts[3][0], rn = Number(parts[3][1]);
+    if (fc && rn) st.ep = (rn - 1) * 8 + (fc.charCodeAt(0) - 97);
+  }
+  if (parts[4]) st.halfmove = Number(parts[4]) || 0;
+  if (parts[5]) st.fullmove = Number(parts[5]) || 1;
+  return st;
+}
+
+function fenOf(st) {
+  const rows = [];
+  for (let r = 7; r >= 0; r--) {
+    let line = "", empty = 0;
+    for (let f = 0; f < 8; f++) {
+      const p = st.board[r * 8 + f];
+      if (p === 0) empty++;
+      else { if (empty > 0) { line += empty; empty = 0; } line += PIECE_TO_CHAR[p]; }
+    }
+    if (empty > 0) line += empty;
+    rows.push(line);
+  }
+  let cs = "";
+  if (st.castling.K) cs += "K";
+  if (st.castling.Q) cs += "Q";
+  if (st.castling.k) cs += "k";
+  if (st.castling.q) cs += "q";
+  if (cs === "") cs = "-";
+  let epStr = "-";
+  if (st.ep >= 0) epStr = String.fromCharCode(97 + (st.ep & 7)) + ((st.ep >> 3) + 1);
+  return rows.join("/") + " " + (st.turn === WHITE ? "w" : "b") + " " + cs + " " + epStr +
+         " " + st.halfmove + " " + st.fullmove;
+}
+
+function positionKey(st) {
+  const parts = [];
+  for (let i = 0; i < 64; i++) parts.push(st.board[i]);
+  let cs = "";
+  if (st.castling.K) cs += "K";
+  if (st.castling.Q) cs += "Q";
+  if (st.castling.k) cs += "k";
+  if (st.castling.q) cs += "q";
+  return parts.join(",") + "|" + st.turn + "|" + cs + "|" + (st.ep >= 0 ? st.ep : "-");
+}
+
+// ---------------- 走法生成（伪合法） ----------------
+function push(moves, from, to, promo, isEp, isCastle) {
+  moves.push({ from, to, promo: promo || null, ep: !!isEp, castle: !!isCastle });
+}
+
+function genPseudo(st) {
+  const moves = [];
+  const board = st.board;
+  const isWhite = st.turn === WHITE;
+
+  for (let from = 0; from < 64; from++) {
+    const p = board[from];
+    if (p === 0 || (p > 0) !== isWhite) continue;
+    const ap = p > 0 ? p : -p;
+    const r = rankOf(from), f = fileOf(from);
+
+    if (ap === PAWN) {
+      const fwd = isWhite ? 1 : -1;
+      const startRank = isWhite ? 1 : 6;
+      const promoRank = isWhite ? 7 : 0;
+      const one = shift(from, fwd, 0);
+      if (one >= 0 && board[one] === 0) {
+        if (rankOf(one) === promoRank) {
+          push(moves, from, one, QUEEN); push(moves, from, one, ROOK);
+          push(moves, from, one, BISHOP); push(moves, from, one, KNIGHT);
+        } else {
+          push(moves, from, one, null);
+          if (r === startRank) {
+            const two = shift(one, fwd, 0);
+            if (two >= 0 && board[two] === 0) push(moves, from, two, null);
+          }
+        }
+      }
+      for (const df of [-1, 1]) {
+        const to = shift(from, fwd, df);
+        if (to < 0) continue;
+        const target = board[to];
+        if (target !== 0 && (target > 0) !== isWhite) {
+          if (rankOf(to) === promoRank) {
+            push(moves, from, to, QUEEN); push(moves, from, to, ROOK);
+            push(moves, from, to, BISHOP); push(moves, from, to, KNIGHT);
+          } else push(moves, from, to, null);
+        } else if (st.ep >= 0 && to === st.ep) {
+          push(moves, from, to, null, true);
+        }
+      }
+
+    } else if (ap === KNIGHT) {
+      for (const [dr, df] of KNIGHT_DIRS) {
+        const to = shift(from, dr, df);
+        if (to < 0) continue;
+        const target = board[to];
+        if (target === 0 || (target > 0) !== isWhite) push(moves, from, to, null);
+      }
+
+    } else if (ap === KING) {
+      for (const [dr, df] of KING_DIRS) {
+        const to = shift(from, dr, df);
+        if (to < 0) continue;
+        const target = board[to];
+        if (target === 0 || (target > 0) !== isWhite) push(moves, from, to, null);
+      }
+      const homeRank = isWhite ? 0 : 7;
+      if (r === homeRank && f === 4) {
+        const rookPiece = isWhite ? ROOK : -ROOK;
+        const kOK = isWhite ? st.castling.K : st.castling.k;
+        const qOK = isWhite ? st.castling.Q : st.castling.q;
+        const rookK = homeRank * 8 + 7;
+        const rookQ = homeRank * 8 + 0;
+        if (kOK && board[rookK] === rookPiece &&
+            board[homeRank*8+5] === 0 && board[homeRank*8+6] === 0) {
+          push(moves, from, homeRank*8+6, null, false, true);
+        }
+        if (qOK && board[rookQ] === rookPiece &&
+            board[homeRank*8+3] === 0 && board[homeRank*8+2] === 0 && board[homeRank*8+1] === 0) {
+          push(moves, from, homeRank*8+2, null, false, true);
+        }
+      }
+
+    } else {
+      const dirs = ap === BISHOP ? BISHOP_DIRS : (ap === ROOK ? ROOK_DIRS : QUEEN_DIRS);
+      for (const [dr, df] of dirs) {
+        let cur = from;
+        while (true) {
+          const to = shift(cur, dr, df);
+          if (to < 0) break;
+          const target = board[to];
+          if (target === 0) { push(moves, from, to, null); cur = to; }
+          else { if ((target > 0) !== isWhite) push(moves, from, to, null); break; }
+        }
+      }
+    }
+  }
+  return moves;
+}
+
+// ---------------- 攻击检测 ----------------
+function isAttacked(st, sq, bySide) {
+  const board = st.board;
+  const isWhite = bySide === WHITE;
+
+  // 兵
+  const pr = (sq >> 3) + (isWhite ? -1 : 1);
+  if (pr >= 0 && pr <= 7) {
+    for (const df of [-1, 1]) {
+      const pf = (sq & 7) + df;
+      if (pf >= 0 && pf <= 7) {
+        const p = board[pr * 8 + pf];
+        if (p !== 0 && (p > 0) === isWhite && (p > 0 ? p : -p) === PAWN) return true;
+      }
+    }
+  }
+  // 马
+  for (const [dr, df] of KNIGHT_DIRS) {
+    const from = shift(sq, -dr, -df);
+    if (from < 0) continue;
+    const p = board[from];
+    if (p !== 0 && (p > 0) === isWhite && (p > 0 ? p : -p) === KNIGHT) return true;
+  }
+  // 王
+  for (const [dr, df] of KING_DIRS) {
+    const from = shift(sq, -dr, -df);
+    if (from < 0) continue;
+    const p = board[from];
+    if (p !== 0 && (p > 0) === isWhite && (p > 0 ? p : -p) === KING) return true;
+  }
+  // 车/后（直线）
+  for (const [dr, df] of ROOK_DIRS) {
+    let cur = sq;
+    while (true) {
+      const to = shift(cur, dr, df);
+      if (to < 0) break;
+      const p = board[to];
+      if (p !== 0) {
+        if ((p > 0) === isWhite) { const ap = p > 0 ? p : -p; if (ap === ROOK || ap === QUEEN) return true; }
+        break;
+      }
+      cur = to;
+    }
+  }
+  // 象/后（斜线）
+  for (const [dr, df] of BISHOP_DIRS) {
+    let cur = sq;
+    while (true) {
+      const to = shift(cur, dr, df);
+      if (to < 0) break;
+      const p = board[to];
+      if (p !== 0) {
+        if ((p > 0) === isWhite) { const ap = p > 0 ? p : -p; if (ap === BISHOP || ap === QUEEN) return true; }
+        break;
+      }
+      cur = to;
+    }
+  }
+  return false;
+}
+
+function findKing(st, side) {
+  const kingPiece = side === WHITE ? KING : -KING;
+  for (let i = 0; i < 64; i++) if (st.board[i] === kingPiece) return i;
+  return -1;
+}
+
+function inCheck(st, side) {
+  const ksq = findKing(st, side);
+  if (ksq < 0) return false;
+  return isAttacked(st, ksq, -side);
+}
+
+// ---------------- make / unmake ----------------
+function make(st, mv) {
+  const board = st.board;
+  const side = st.turn;
+  const moving = board[mv.from];
+  const undo = {
+    mv,
+    captured: board[mv.to],
+    capturedSq: mv.to,
+    epBefore: st.ep,
+    castling: { K: st.castling.K, Q: st.castling.Q, k: st.castling.k, q: st.castling.q },
+    halfmove: st.halfmove,
+    fullmove: st.fullmove,
+    turn: st.turn,
+    castleRookFrom: -1,
+    castleRookTo: -1,
+  };
+
+  if (mv.ep) {
+    const capSq = shift(mv.to, side === WHITE ? -1 : 1, 0);
+    undo.captured = board[capSq];
+    undo.capturedSq = capSq;
+    board[capSq] = 0;
+  }
+
+  board[mv.to] = mv.promo ? (side === WHITE ? mv.promo : -mv.promo) : moving;
+  board[mv.from] = 0;
+
+  if (mv.castle) {
+    const homeRank = side === WHITE ? 0 : 7;
+    if (mv.to === homeRank * 8 + 6) {
+      undo.castleRookFrom = homeRank * 8 + 7;
+      undo.castleRookTo = homeRank * 8 + 5;
+    } else {
+      undo.castleRookFrom = homeRank * 8 + 0;
+      undo.castleRookTo = homeRank * 8 + 3;
+    }
+    board[undo.castleRookTo] = board[undo.castleRookFrom];
+    board[undo.castleRookFrom] = 0;
+  }
+
+  const ap = moving > 0 ? moving : -moving;
+  if (ap === KING) {
+    if (side === WHITE) { st.castling.K = false; st.castling.Q = false; }
+    else { st.castling.k = false; st.castling.q = false; }
+  } else if (ap === ROOK) {
+    if (mv.from === 0) st.castling.Q = false;
+    else if (mv.from === 7) st.castling.K = false;
+    else if (mv.from === 56) st.castling.q = false;
+    else if (mv.from === 63) st.castling.k = false;
+  }
+  if (mv.to === 0) st.castling.Q = false;
+  else if (mv.to === 7) st.castling.K = false;
+  else if (mv.to === 56) st.castling.q = false;
+  else if (mv.to === 63) st.castling.k = false;
+
+  st.ep = -1;
+  if (ap === PAWN && Math.abs(mv.to - mv.from) === 16) st.ep = (mv.from + mv.to) >> 1;
+
+  if (ap === PAWN || undo.captured !== 0) st.halfmove = 0; else st.halfmove++;
+  if (side === BLACK) st.fullmove++;
+  st.turn = -side;
+  st.history.push(positionKey(st));
+  return undo;
+}
+
+function unmake(st, undo) {
+  const mv = undo.mv;
+  const side = undo.turn;
+  const board = st.board;
+
+  st.history.pop();
+  st.turn = side;
+  st.ep = undo.epBefore;
+  st.castling.K = undo.castling.K; st.castling.Q = undo.castling.Q;
+  st.castling.k = undo.castling.k; st.castling.q = undo.castling.q;
+  st.halfmove = undo.halfmove;
+  st.fullmove = undo.fullmove;
+
+  if (undo.castleRookFrom >= 0) {
+    board[undo.castleRookFrom] = board[undo.castleRookTo];
+    board[undo.castleRookTo] = 0;
+  }
+  board[mv.from] = mv.promo ? (side === WHITE ? PAWN : -PAWN) : board[mv.to];
+  board[mv.to] = 0;
+  board[undo.capturedSq] = undo.captured;
+}
+
+// 合法性：必须检查易位路径。【教训】perft 曾因跳过这条多算 4 步（2043 vs 2039）
+function isLegal(st, mv) {
+  const side = st.turn;
+  if (mv.castle) {
+    if (inCheck(st, side)) return false;
+    const homeRank = side === WHITE ? 0 : 7;
+    const kingSq = homeRank * 8 + 4;
+    const midSq = mv.to > kingSq ? homeRank * 8 + 5 : homeRank * 8 + 3;
+    const board = st.board;
+    const savedKing = board[kingSq];
+    board[kingSq] = 0;
+    board[midSq] = savedKing;
+    const attacked = isAttacked(st, midSq, -side);
+    board[midSq] = 0;
+    board[kingSq] = savedKing;
+    if (attacked) return false;
+  }
+  const undo = make(st, mv);
+  const ok = !inCheck(st, side);
+  unmake(st, undo);
+  return ok;
+}
+
+function legalMoves(st) {
+  const out = [];
+  for (const mv of genPseudo(st)) if (isLegal(st, mv)) out.push(mv);
+  return out;
+}
+
+function isCheckmate(st) {
+  if (!inCheck(st, st.turn)) return false;
+  return legalMoves(st).length === 0;
+}
+function isStalemate(st) {
+  if (inCheck(st, st.turn)) return false;
+  return legalMoves(st).length === 0;
+}
+
+function isInsufficientMaterial(st) {
+  const minors = [];
+  let majors = 0;
+  for (let i = 0; i < 64; i++) {
+    const p = st.board[i];
+    if (p === 0) continue;
+    const ap = p > 0 ? p : -p;
+    if (ap === KING) continue;
+    if (ap === PAWN || ap === ROOK || ap === QUEEN) majors++;
+    else minors.push({ sq: i, ap });
+  }
+  if (majors > 0) return false;
+  if (minors.length === 0) return true;
+  if (minors.length === 1) return true;
+  if (minors.length === 2) {
+    const a = minors[0], b = minors[1];
+    if (a.ap === BISHOP && b.ap === BISHOP) {
+      const sa = (rankOf(a.sq) + fileOf(a.sq)) % 2;
+      const sb = (rankOf(b.sq) + fileOf(b.sq)) % 2;
+      return sa === sb;
+    }
+    return false;
+  }
+  return false;
+}
+
+function isThreefold(st) {
+  const key = positionKey(st);
+  let count = 1;
+  for (const k of st.history) if (k === key) count++;
+  return count >= 3;
+}
+function isFiftyMove(st) { return st.halfmove >= 100; }
+
+function gameStatus(st) {
+  if (isCheckmate(st)) return { over:true, result: st.turn === WHITE ? "0-1" : "1-0", reason:"checkmate" };
+  if (isStalemate(st)) return { over:true, result:"1/2-1/2", reason:"stalemate" };
+  if (isInsufficientMaterial(st)) return { over:true, result:"1/2-1/2", reason:"insufficient" };
+  if (isThreefold(st)) return { over:true, result:"1/2-1/2", reason:"threefold" };
+  if (isFiftyMove(st)) return { over:true, result:"1/2-1/2", reason:"fifty" };
+  return { over:false, result:null, reason:null };
+}
+
+function perft(st, depth) {
+  if (depth === 0) return 1;
+  let n = 0;
+  for (const mv of genPseudo(st)) {
+    if (isLegal(st, mv)) {
+      const undo = make(st, mv);
+      n += perft(st, depth - 1);
+      unmake(st, undo);
+    }
+  }
+  return n;
+}
+
+function sqName(sq) {
+  return String.fromCharCode(97 + (sq & 7)) + ((sq >> 3) + 1);
+}
+function uciOf(mv) {
+  let s = sqName(mv.from) + sqName(mv.to);
+  if (mv.promo) s += { [QUEEN]:"q", [ROOK]:"r", [BISHOP]:"b", [KNIGHT]:"n" }[mv.promo];
+  return s;
+}
+function findMove(st, uci) {
+  for (const mv of legalMoves(st)) if (uciOf(mv) === uci) return mv;
+  return null;
+}
+function legalUciList(st) {
+  return legalMoves(st).map(uciOf).sort();
+}
+
+// 导出（浏览器与 Node 通用）
+const CHESS_RULES = {
+  PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING, WHITE, BLACK,
+  PIECE_LETTER,
+  parseFen, fenOf, positionKey, genPseudo, isAttacked, findKing, inCheck,
+  make, unmake, isLegal, legalMoves, isCheckmate, isStalemate,
+  isInsufficientMaterial, isThreefold, isFiftyMove, gameStatus, perft,
+  sqName, uciOf, findMove, legalUciList,
+};
+if (typeof module === "object" && module.exports) module.exports = CHESS_RULES;
+if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
+
+</script>
+
+<script>
+/* ============================================================================
+   Demo 主程序
+   ============================================================================ */
+(function () {
+  "use strict";
+
+  // ---------- 布局常量（与 lua/levelScript.lua 第 4 区 LAYOUT 一致） ----------
+  const BASE_W = 1600, BASE_H = 900;
+  const BOARD_SIDE_RATIO = 0.78;
+  const PANEL_WIDTH_RATIO = 0.22;
+
+  const FONT = {
+    COORD: 22, PIECE: 52, PANEL_TITLE: 32, PANEL_BODY: 20, CLOCK: 36,
+    BUTTON: 24, HINT: 24, RESULT_TITLE: 44, RESULT_SUB: 24, PROMO_OPTION: 24,
+    MIN_FONT: 16,
+  };
+
+  const COLOR = {
+    BG: "rgb(18,22,30)", SQ_LIGHT: "rgb(238,228,208)", SQ_DARK: "rgb(106,130,150)",
+    SEL: "rgb(250,198,74)", LEGAL: "rgb(108,186,130)", LAST: "rgb(176,196,226)",
+    CHECK: "rgb(214,70,66)", PANEL: "rgb(26,32,44)", PANEL_SEC: "rgb(34,42,56)",
+    TEXT: "rgb(238,240,244)", TEXT_SUB: "rgb(150,158,170)",
+    BTN: "rgb(58,74,104)", BTN_TEXT: "rgb(244,246,250)",
+    BTN_DIS: "rgb(40,46,58)", BTN_DIS_TEXT: "rgb(110,116,128)",
+    CLOCK_LOW: "rgb(214,74,74)",
+    WHITE_PIECE: "rgb(250,250,246)", WHITE_OUTLINE: "rgb(38,34,28)",
+    BLACK_PIECE: "rgb(26,24,22)", BLACK_OUTLINE: "rgb(238,234,226)",
+  };
+
+  // 全部玩家可见文案：逐字照 docs/策划案.md 9.2–9.6，改这里必须同步改 Lua
+  const TEXT = {
+    // 提示与轮次
+    HINT_OPENING: "点一枚自己的棋子，再点亮起来的格子",
+    HINT_SELECTED: "已选中 · 点亮的格子都能走",
+    TURN_WHITE: "轮到白方走子",
+    TURN_BLACK: "轮到黑方走子",
+    WAIT_OPPONENT: "等待对方走子…",
+    CHECK: "将军！请先解围",
+    // 结算标题
+    RESULT_WHITE_WIN: "白方将死黑方，白方胜",
+    RESULT_BLACK_WIN: "黑方将死白方，黑方胜",
+    RESULT_STALEMATE: "无子可动，本局和棋",
+    RESULT_FIFTY: "五十步无进展，本局和棋",
+    RESULT_THREEFOLD: "局面重复三次，本局和棋",
+    RESULT_INSUFFICIENT: "子力不足，本局和棋",
+    RESULT_TIMEOUT_WHITE: "白方超时，黑方胜",
+    RESULT_TIMEOUT_BLACK: "黑方超时，白方胜",
+    RESULT_RESIGN_WHITE: "白方认输，黑方胜",
+    RESULT_RESIGN_BLACK: "黑方认输，白方胜",
+    RESULT_DRAW_AGREED: "对方同意和棋，本局和棋",
+    // 结算说明行
+    SUB_CHECKMATE: "本局用时 {t}",
+    SUB_STALEMATE: "双方都走不动了",
+    SUB_FIFTY: "五十步没有吃子",
+    SUB_THREEFOLD: "同一局面出现了三次",
+    SUB_INSUFFICIENT: "剩下的子赢不了",
+    SUB_TIMEOUT_WHITE: "白方时间用完了",
+    SUB_TIMEOUT_BLACK: "黑方时间用完了",
+    SUB_RESIGN_WHITE: "白方点了认输",
+    SUB_RESIGN_BLACK: "黑方点了认输",
+    SUB_DRAW_AGREED: "双方握手言和",
+    // 按钮
+    BTN_AGAIN: "再来一局",
+    BTN_NEWGAME: "新开一局",
+    BTN_RESIGN: "认输",
+    BTN_DRAW: "求和",
+    BTN_LOCAL: "切换本地同屏",
+    BTN_STYLE_DISC: "棋子：圆盘",
+    BTN_STYLE_GLYPH: "棋子：符号",
+    BTN_ONLINE: "切换联机对战",
+    BTN_DRAW_USED: "求和已用完",
+    // 确认弹窗
+    CONFIRM_RESIGN: "认输就直接判负，确定吗",
+    CONFIRM_RESIGN_YES: "确定认输",
+    CONFIRM_RESIGN_NO: "继续下棋",
+    CONFIRM_NEWGAME: "重开会清空这一局",
+    CONFIRM_YES: "确定",
+    CONFIRM_NO: "取消",
+    CONFIRM_SWITCH: "切换会断开这一局，确定吗",
+    CONFIRM_DRAW: "对方想和棋，同意吗",
+    CONFIRM_DRAW_YES: "同意和棋",
+    CONFIRM_DRAW_NO: "拒绝求和",
+    // 面板
+    PANEL_TITLE: "黑白棋局",
+    CAP_WHITE_PREFIX: "白方失子 ",
+    CAP_BLACK_PREFIX: "黑方失子 ",
+    CAP_NONE: "无",
+    MOVELOG_TITLE: "最近六步",
+    MOVELOG_EMPTY: "还没有走子",
+    // 升变
+    PROMO_PROMPT: "兵到底了，选一个子",
+    PROMO_QUEEN: "后",
+    PROMO_ROOK: "车",
+    PROMO_BISHOP: "象",
+    PROMO_KNIGHT: "马",
+  };
+
+  // ---- 棋子显示方式（两种，游戏中可切换）----
+  //  mode 0 = Unicode 棋符（默认，零图片依赖）
+  //  mode 1 = 图片（需用户在编辑器里给 12 个图片编号；编号缺失时自动回落 mode 0）
+  //
+  //  Unicode 用实心棋符 U+265A..U+265F，白方用白色填充 + 深色描边，
+  //  黑方用深色填充 + 浅色描边 —— 同一套字形靠颜色区分，视觉统一。
+  const GLYPH = {
+    //           白方(实心)  黑方(实心)
+    [CHESS_RULES.KING]:   [0x265A, 0x265A],
+    [CHESS_RULES.QUEEN]:  [0x265B, 0x265B],
+    [CHESS_RULES.ROOK]:   [0x265C, 0x265C],
+    [CHESS_RULES.BISHOP]: [0x265D, 0x265D],
+    [CHESS_RULES.KNIGHT]: [0x265E, 0x265E],
+    [CHESS_RULES.PAWN]:   [0x265F, 0x265F],
+  };
+  function pieceGlyph(p) {
+    const ap = Math.abs(p);
+    const g = GLYPH[ap];
+    if (!g) return "?";
+    return String.fromCharCode(g[0]);
+  }
+
+  const INITIAL_TIME_SEC = 900, INCREMENT_SEC = 10;
+  const CLOCK_REFRESH_SEC = 0.25, DRAW_COOLDOWN_SEC = 30, CLOCK_LOW_SEC = 60;
+  const MOVE_LOG_LINES = 6;
+
+  // ---------- 布局计算（唯一换算入口） ----------
+  function computeLayout(canvasW, canvasH) {
+    const boardSide = canvasH * BOARD_SIDE_RATIO;
+    const cell = boardSide / 8;
+    const boardBottom = (canvasH - boardSide) / 2;
+    const panelW = canvasW * PANEL_WIDTH_RATIO;
+    const panelLeft = canvasW - panelW;
+    const panelH = boardSide;
+    const panelBottom = (canvasH - panelH) / 2;
+    let boardLeft = (canvasW - boardSide) / 2;
+    if ((canvasW + boardSide) / 2 > canvasW - panelW) {
+      boardLeft = (panelLeft - boardSide) / 2;
+    }
+    const fontScale = canvasH / BASE_H;
+    const font = (base) => Math.max(FONT.MIN_FONT, Math.floor(base * fontScale));
+    return { canvasW, canvasH, boardSide, cell, boardLeft, boardBottom,
+             panelW, panelLeft, panelBottom, panelH, font, fontScale };
+  }
+
+  const L = computeLayout(BASE_W, BASE_H);
+
+  function sqPos(sq) {
+    const file = sq & 7, rank = sq >> 3;
+    return { x: L.boardLeft + file * L.cell, y: L.boardBottom + rank * L.cell };
+  }
+
+  // ---------- 元素工厂 ----------
+  const boardEl = document.getElementById("board");
+  const overlayLayer = document.getElementById("overlayLayer");
+
+  function mkEl(parent, cls, opts) {
+    const el = document.createElement("div");
+    el.className = "el " + cls;
+    if (opts) {
+      if (opts.x !== undefined) el.style.left = opts.x + "px";
+      if (opts.y !== undefined) el.style.bottom = opts.y + "px";
+      if (opts.w !== undefined) el.style.width = opts.w + "px";
+      if (opts.h !== undefined) el.style.height = opts.h + "px";
+      if (opts.bg) el.style.background = opts.bg;
+      if (opts.color) el.style.color = opts.color;
+      if (opts.fontSize) el.style.fontSize = opts.fontSize + "px";
+      if (opts.text !== undefined) el.textContent = opts.text;
+      if (opts.anchorId) el.setAttribute("data-anchor-id", opts.anchorId);
+    }
+    parent.appendChild(el);
+    return el;
+  }
+
+  // ---------- 界面元素池 ----------
+  const UI = {
+    squares: [], hitAreas: [], pieceSlots: [], slotShown: 0, legalHL: [], selHL: null,
+    lastMove: [], checkHL: null, coords: [], hint: null,
+    panel: {}, result: {}, promo: {}, drawDlg: {},
+  };
+
+  function buildBoard() {
+    // 格底
+    for (let sq = 0; sq < 64; sq++) {
+      const p = sqPos(sq);
+      const isDark = (((sq >> 3) + (sq & 7)) % 2 === 0);
+      UI.squares[sq] = mkEl(boardEl, "sq", {
+        x: p.x, y: p.y, w: L.cell, h: L.cell,
+        bg: isDark ? COLOR.SQ_DARK : COLOR.SQ_LIGHT,
+        anchorId: "sq_" + sq,
+      });
+    }
+    // 上一步痕迹
+    for (let i = 0; i < 2; i++) {
+      UI.lastMove[i] = mkEl(boardEl, "last el", { x: 0, y: 0, w: L.cell, h: L.cell, bg: COLOR.LAST, anchorId: "lastmove_" + (i+1) });
+      UI.lastMove[i].style.opacity = "0.55";
+      UI.lastMove[i].classList.add("hidden");
+    }
+    // 将军警示
+    UI.checkHL = mkEl(boardEl, "checkwarn el", { x: 0, y: 0, w: L.cell, h: L.cell, bg: COLOR.CHECK, anchorId: "checkwarn" });
+    UI.checkHL.style.opacity = "0.7";
+    UI.checkHL.classList.add("hidden");
+    // 棋子槽位（32 个：棋盘上同时最多 32 枚棋子在场）
+    // 每槽 = 圆盘外圈 + 圆盘内圈 + 棋符文本框；两档样式共用，切档只改显隐，不重建。
+    for (let i = 0; i < 32; i++) {
+      const slot = { sq: -1 };
+      slot.outer = mkEl(boardEl, "piece-disc el", { x: 0, y: 0, w: L.cell, h: L.cell, anchorId: "pdisco_" + i });
+      slot.inner = mkEl(boardEl, "piece-disc el", { x: 0, y: 0, w: L.cell, h: L.cell, anchorId: "pdski_" + i });
+      slot.glyph = mkEl(boardEl, "piece", { x: 0, y: 0, w: L.cell, h: L.cell, fontSize: pieceFont, anchorId: "piece_" + i });
+      for (const el of [slot.outer, slot.inner, slot.glyph]) el.classList.add("hidden");
+      UI.pieceSlots[i] = slot;
+    }
+    // 落点高亮池（28）
+    for (let i = 0; i < 28; i++) {
+      UI.legalHL[i] = mkEl(boardEl, "legal el", { x: 0, y: 0, w: L.cell, h: L.cell, bg: COLOR.LEGAL, anchorId: "legalhl_" + (i+1) });
+      UI.legalHL[i].style.opacity = "0.55";
+      UI.legalHL[i].classList.add("hidden");
+    }
+    // 选中高亮
+    UI.selHL = mkEl(boardEl, "sel el", { x: 0, y: 0, w: L.cell, h: L.cell, bg: COLOR.SEL, anchorId: "selhl" });
+    UI.selHL.style.opacity = "0.8";
+    UI.selHL.classList.add("hidden");
+    // 坐标
+    const coordFont = L.font(FONT.COORD);
+    for (let f = 0; f < 8; f++) {
+      const letter = String.fromCharCode(97 + f);
+      UI.coords.push(mkEl(boardEl, "coord", {
+        x: L.boardLeft + f * L.cell, y: L.boardBottom - coordFont,
+        w: L.cell, h: coordFont, fontSize: coordFont, color: COLOR.TEXT_SUB,
+        text: letter, anchorId: "coordF_" + f,
+      }));
+    }
+    for (let r = 0; r < 8; r++) {
+      UI.coords.push(mkEl(boardEl, "coord", {
+        x: L.boardLeft - coordFont, y: L.boardBottom + r * L.cell,
+        w: coordFont, h: L.cell, fontSize: coordFont, color: COLOR.TEXT_SUB,
+        text: String(r + 1), anchorId: "coordR_" + r,
+      }));
+    }
+    // 点击检测区（盖在格上）
+    for (let sq = 0; sq < 64; sq++) {
+      const p = sqPos(sq);
+      const el = mkEl(boardEl, "hit el", { x: p.x, y: p.y, w: L.cell, h: L.cell, anchorId: "hit_" + sq });
+      el.dataset.sq = String(sq);
+      el.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        onSquareClicked(sq);
+      });
+      UI.hitAreas[sq] = el;
+    }
+  }
+
+  function buildPanel() {
+    const px = L.panelLeft, py = L.panelBottom, pw = L.panelW, ph = L.panelH;
+    const atX = (r) => px + pw * r;
+    const atY = (r) => py + ph * r;
+
+    UI.panel.bg = mkEl(overlayLayer, "panel el", { x: px, y: py, w: pw, h: ph, bg: COLOR.PANEL, anchorId: "panelbg" });
+
+    UI.panel.title = mkEl(overlayLayer, "panel-el el", {
+      x: atX(0.04), y: atY(0.90), w: pw * 0.92, h: ph * 0.08,
+      fontSize: L.font(FONT.PANEL_TITLE), color: COLOR.TEXT, text: TEXT.PANEL_TITLE, anchorId: "paneltitle",
+    });
+    UI.panel.turn = mkEl(overlayLayer, "panel-el el", {
+      x: atX(0.04), y: atY(0.82), w: pw * 0.92, h: ph * 0.06,
+      fontSize: L.font(FONT.PANEL_BODY), color: COLOR.TEXT, text: TEXT.TURN_WHITE, anchorId: "panelturn",
+    });
+    UI.panel.clockWhite = mkEl(overlayLayer, "panel-el el", {
+      x: atX(0.04), y: atY(0.72), w: pw * 0.92, h: ph * 0.09,
+      fontSize: L.font(FONT.CLOCK), color: COLOR.TEXT, text: "白方 15:00", anchorId: "clockwhite",
+    });
+    UI.panel.clockBlack = mkEl(overlayLayer, "panel-el el", {
+      x: atX(0.04), y: atY(0.63), w: pw * 0.92, h: ph * 0.09,
+      fontSize: L.font(FONT.CLOCK), color: COLOR.TEXT, text: "黑方 15:00", anchorId: "clockblack",
+    });
+    UI.panel.capWhite = mkEl(overlayLayer, "panel-el el", {
+      x: atX(0.04), y: atY(0.56), w: pw * 0.92, h: ph * 0.05,
+      fontSize: L.font(FONT.PANEL_BODY), color: COLOR.TEXT_SUB, text: "", anchorId: "capwhite",
+    });
+    UI.panel.capBlack = mkEl(overlayLayer, "panel-el el", {
+      x: atX(0.04), y: atY(0.50), w: pw * 0.92, h: ph * 0.05,
+      fontSize: L.font(FONT.PANEL_BODY), color: COLOR.TEXT_SUB, text: "", anchorId: "capblack",
+    });
+    UI.panel.moveLog = mkEl(overlayLayer, "panel-el el", {
+      x: atX(0.04), y: atY(0.34), w: pw * 0.92, h: ph * 0.14,
+      fontSize: L.font(FONT.PANEL_BODY), color: COLOR.TEXT_SUB, text: "", anchorId: "movelog",
+    });
+    UI.panel.moveLog.style.flexDirection = "column";
+    UI.panel.moveLog.style.alignItems = "center";
+    UI.panel.moveLog.style.justifyContent = "flex-start";
+    UI.panel.moveLog.style.whiteSpace = "pre-line";
+    UI.panel.moveLog.style.lineHeight = "1.05";
+
+    // 按钮高 8%：720 高下 = 44.9px，刚好达到触摸目标下限。不可再降。
+    const btnW = pw * 0.44, btnH = ph * 0.08;
+    const btnSpecs = [
+      ["btnNew", "hitNew", atX(0.04), atY(0.24), TEXT.BTN_NEWGAME, "btnnew"],
+      ["btnResign", "hitResign", atX(0.52), atY(0.24), TEXT.BTN_RESIGN, "btnresign"],
+      ["btnDraw", "hitDraw", atX(0.04), atY(0.15), TEXT.BTN_DRAW, "btndraw"],
+      ["btnLocal", "hitLocal", atX(0.52), atY(0.15), TEXT.BTN_LOCAL, "btnlocal"],
+      ["btnStyle", "hitStyle", atX(0.04), atY(0.06), TEXT.BTN_STYLE_DISC, "btnstyle"],
+    ];
+    for (const [key, hitKey, bx, by, label, anchorId] of btnSpecs) {
+      UI.panel[key] = mkEl(overlayLayer, "btn el", {
+        x: bx, y: by, w: btnW, h: btnH, bg: COLOR.BTN,
+        fontSize: L.font(FONT.BUTTON), color: COLOR.BTN_TEXT, text: label, anchorId,
+      });
+      const hit = mkEl(overlayLayer, "btn-hit el", { x: bx, y: by, w: btnW, h: btnH, anchorId: anchorId + "_hit" });
+      UI.panel[hitKey] = hit;
+    }
+    UI.panel.hitNew.addEventListener("click", (e) => { e.stopPropagation(); newGame(); });
+    UI.panel.hitResign.addEventListener("click", (e) => { e.stopPropagation(); doResign(); });
+    UI.panel.hitDraw.addEventListener("click", (e) => { e.stopPropagation(); doDrawRequest(); });
+    UI.panel.hitLocal.addEventListener("click", (e) => { e.stopPropagation(); toggleLocalMode(); });
+    UI.panel.hitStyle.addEventListener("click", (e) => { e.stopPropagation(); togglePieceStyle(); });
+
+    const hintH = L.font(FONT.HINT) * 1.4;
+    UI.hint = mkEl(overlayLayer, "hint", {
+      x: L.boardLeft, y: L.boardBottom + L.boardSide + hintH * 0.3,
+      w: L.boardSide, h: hintH,
+      fontSize: L.font(FONT.HINT), color: COLOR.TEXT_SUB, text: TEXT.HINT_OPENING, anchorId: "hint",
+    });
+  }
+
+  function buildResult() {
+    UI.result.overlay = mkEl(overlayLayer, "overlay el", { x: 0, y: 0, w: BASE_W, h: BASE_H, anchorId: "resultoverlay" });
+    UI.result.overlay.classList.add("hidden");
+    const w = BASE_W * 0.40, h = BASE_H * 0.40;
+    const x = (BASE_W - w) / 2, y = (BASE_H - h) / 2;
+    UI.result.bg = mkEl(overlayLayer, "dlg-bg el", { x, y, w, h, anchorId: "resultbg" });
+    UI.result.title = mkEl(overlayLayer, "dlg-el el", {
+      x: x + w * 0.05, y: y + h * 0.62, w: w * 0.90, h: h * 0.18,
+      fontSize: L.font(FONT.RESULT_TITLE), color: COLOR.TEXT, text: "", anchorId: "resulttitle",
+    });
+    UI.result.sub = mkEl(overlayLayer, "dlg-el el", {
+      x: x + w * 0.05, y: y + h * 0.40, w: w * 0.90, h: h * 0.14,
+      fontSize: L.font(FONT.RESULT_SUB), color: COLOR.TEXT_SUB, text: "", anchorId: "resultsub",
+    });
+    UI.result.btn = mkEl(overlayLayer, "dlg-btn el", {
+      x: x + w * 0.30, y: y + h * 0.12, w: w * 0.40, h: h * 0.14,
+      bg: COLOR.BTN, fontSize: L.font(FONT.BUTTON), color: COLOR.BTN_TEXT, text: TEXT.BTN_AGAIN, anchorId: "btnagain",
+    });
+    UI.result.btn.addEventListener("click", (e) => { e.stopPropagation(); newGame(); });
+    UI.result.parts = [UI.result.overlay, UI.result.bg, UI.result.title, UI.result.sub, UI.result.btn];
+    showParts(UI.result.parts, false);   // 【必须】创建后立即隐藏全部部件（曾只隐藏遮罩，导致面板底盖住棋盘）
+  }
+
+  function buildPromo() {
+    const w = BASE_W * 0.44, h = BASE_H * 0.30;
+    const x = (BASE_W - w) / 2, y = (BASE_H - h) / 2;
+    UI.promo.bg = mkEl(overlayLayer, "dlg-bg el", { x, y, w, h, anchorId: "promobg" });
+    UI.promo.prompt = mkEl(overlayLayer, "dlg-el el", {
+      x: x + w * 0.05, y: y + h * 0.66, w: w * 0.90, h: h * 0.16,
+      fontSize: L.font(36), color: COLOR.TEXT, text: TEXT.PROMO_PROMPT, anchorId: "prompt",
+    });
+    UI.promo.buttons = [];
+    const labels = [TEXT.PROMO_QUEEN, TEXT.PROMO_ROOK, TEXT.PROMO_BISHOP, TEXT.PROMO_KNIGHT];
+    const pieces = [CHESS_RULES.QUEEN, CHESS_RULES.ROOK, CHESS_RULES.BISHOP, CHESS_RULES.KNIGHT];
+    const cols = [0.04, 0.26, 0.48, 0.70];
+    for (let i = 0; i < 4; i++) {
+      const bx = x + w * cols[i], by = y + h * 0.10, bw = w * 0.22, bh = h * 0.26;
+      const btn = mkEl(overlayLayer, "dlg-btn el", {
+        x: bx, y: by, w: bw, h: bh, bg: COLOR.BTN,
+        fontSize: L.font(FONT.PROMO_OPTION), color: COLOR.BTN_TEXT, text: labels[i], anchorId: "promo" + (i+1),
+      });
+      btn.addEventListener("click", (e) => { e.stopPropagation(); onPromoChosen(pieces[i]); });
+      UI.promo.buttons.push(btn);
+    }
+    UI.promo.parts = [UI.promo.bg, UI.promo.prompt].concat(UI.promo.buttons);
+    showParts(UI.promo.parts, false);   // 【必须】创建后立即隐藏，否则会盖在棋盘上
+  }
+
+  function buildDrawDlg() {
+    const w = BASE_W * 0.46, h = BASE_H * 0.28;
+    const x = (BASE_W - w) / 2, y = (BASE_H - h) / 2;
+    UI.drawDlg.bg = mkEl(overlayLayer, "dlg-bg el", { x, y, w, h, anchorId: "drawbg" });
+    UI.drawDlg.text = mkEl(overlayLayer, "dlg-el el", {
+      x: x + w * 0.05, y: y + h * 0.46, w: w * 0.90, h: h * 0.30,
+      fontSize: L.font(26), color: COLOR.TEXT, text: TEXT.CONFIRM_DRAW, anchorId: "drawtext",
+    });
+    const by = y + h * 0.10, bh = h * 0.24, bw = w * 0.44;
+    UI.drawDlg.btnAccept = mkEl(overlayLayer, "dlg-btn el", {
+      x: x + w * 0.06, y: by, w: bw, h: bh, bg: COLOR.BTN,
+      fontSize: L.font(FONT.BUTTON), color: COLOR.BTN_TEXT, text: TEXT.BTN_ACCEPT, anchorId: "btnaccept",
+    });
+    UI.drawDlg.btnReject = mkEl(overlayLayer, "dlg-btn el", {
+      x: x + w * 0.50, y: by, w: bw, h: bh, bg: COLOR.BTN,
+      fontSize: L.font(FONT.BUTTON), color: COLOR.BTN_TEXT, text: TEXT.BTN_REJECT, anchorId: "btnreject",
+    });
+    UI.drawDlg.btnAccept.addEventListener("click", (e) => { e.stopPropagation(); onDrawAccepted(); });
+    UI.drawDlg.btnReject.addEventListener("click", (e) => { e.stopPropagation(); onDrawRejected(); });
+    UI.drawDlg.parts = [UI.drawDlg.bg, UI.drawDlg.text, UI.drawDlg.btnAccept, UI.drawDlg.btnReject];
+    showParts(UI.drawDlg.parts, false);   // 【必须】创建后立即隐藏
+  }
+
+  function showParts(parts, on) {
+    for (const p of parts) {
+      if (!p) continue;
+      if (on) p.classList.remove("hidden"); else p.classList.add("hidden");
+    }
+  }
+
+  // ---------- 游戏状态 ----------
+  const G = {
+    st: null,
+    selected: -1,
+    legalTargets: new Map(),   // to -> [moves]
+    legalMoves: [],
+    pendingPromo: null,
+    over: false,
+    resultText: "", resultSub: "",
+    clockWhite: INITIAL_TIME_SEC, clockBlack: INITIAL_TIME_SEC,
+    clockTimer: 0,
+    moveLog: [],
+    capturedWhite: [], capturedBlack: [],
+    lastFrom: -1, lastTo: -1,
+    localMode: false,     // 同屏模式
+    mySide: 1,            // 1=白 2=黑
+    peerAlive: false,     // 是否有另一个实例在活跃（决定是否限制只操作自己一方）
+    pieceStyle: "disc",   // "disc" 圆盘+棋符 / "glyph" 纯棋符（与 Lua 真机两档一致）
+    drawCooldown: [0, 0],
+    drawPendingFrom: -1,
+    uiReady: false,
+  };
+
+  function formatClock(sec) {
+    if (sec < 0) sec = 0;
+    const total = Math.floor(sec);
+    const m = Math.floor(total / 60), s = total % 60;
+    return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  }
+
+  function renderClocks() {
+    const fw = "白方 " + formatClock(G.clockWhite);
+    const fb = "黑方 " + formatClock(G.clockBlack);
+    UI.panel.clockWhite.textContent = fw;
+    UI.panel.clockBlack.textContent = fb;
+    UI.panel.clockWhite.style.color = G.clockWhite <= CLOCK_LOW_SEC ? COLOR.CLOCK_LOW : COLOR.TEXT;
+    UI.panel.clockBlack.style.color = G.clockBlack <= CLOCK_LOW_SEC ? COLOR.CLOCK_LOW : COLOR.TEXT;
+  }
+
+  function renderTurn() {
+    if (G.over) return;
+    UI.panel.turn.textContent = G.st.turn === CHESS_RULES.WHITE ? TEXT.TURN_WHITE : TEXT.TURN_BLACK;
+  }
+
+  function pieceStyleLabel(style) {
+    return style === "disc" ? TEXT.BTN_STYLE_DISC : TEXT.BTN_STYLE_GLYPH;
+  }
+  function pieceStyleNameCn(style) {
+    return style === "disc" ? "圆盘+棋符" : "纯棋符";
+  }
+
+  // 把一个槽位画成某枚棋子并摆到指定格（几何与 tools_work/three_boards2.html 一致）
+  function paintSlot(slot, p, bx, by, style) {
+    const box = L.cell;
+    const D = box * 0.88, ring = box * 0.048, innerD = D - ring * 2;
+    const isWhite = p > 0;
+    const fill = isWhite ? COLOR.WHITE_PIECE : COLOR.BLACK_PIECE;
+    const outline = isWhite ? COLOR.WHITE_OUTLINE : COLOR.BLACK_OUTLINE;
+    const ox = bx + (box - D) / 2, oy = by + (box - D) / 2;
+    const ix = bx + (box - innerD) / 2, iy = by + (box - innerD) / 2;
+
+    if (style === "glyph") {
+      // 纯棋符：只有文本框，白方白字深描边、黑方深字浅描边
+      slot.outer.classList.add("hidden");
+      slot.inner.classList.add("hidden");
+      slot.glyph.style.left = bx + "px";
+      slot.glyph.style.bottom = by + "px";
+      slot.glyph.style.width = box + "px";
+      slot.glyph.style.height = box + "px";
+      slot.glyph.style.fontSize = Math.floor(box * 0.80) + "px";
+      slot.glyph.style.lineHeight = box + "px";
+      slot.glyph.style.color = fill;
+      slot.glyph.style.textShadow = "0 0 2px " + outline + ", 2px 2px 0 " + outline +
+        ", -2px -2px 0 " + outline + ", 2px -2px 0 " + outline + ", -2px 2px 0 " + outline;
+      slot.glyph.textContent = pieceGlyph(p);
+      slot.glyph.classList.remove("hidden");
+      return;
+    }
+
+    // 圆盘+棋符：外圈=描边色、内圈=棋子色，棋符画在圆盘上（字色=描边色，不加描边避免糊成一团）
+    for (const [el, d, off, col] of [[slot.outer, D, [ox, oy], outline], [slot.inner, innerD, [ix, iy], fill]]) {
+      el.style.left = off[0] + "px";
+      el.style.bottom = off[1] + "px";
+      el.style.width = d + "px";
+      el.style.height = d + "px";
+      el.style.background = col;
+      el.classList.remove("hidden");
+    }
+    slot.glyph.style.left = ix + "px";
+    slot.glyph.style.bottom = iy + "px";
+    slot.glyph.style.width = innerD + "px";
+    slot.glyph.style.height = innerD + "px";
+    slot.glyph.style.fontSize = Math.floor(innerD * 0.80) + "px";
+    slot.glyph.style.lineHeight = innerD + "px";
+    slot.glyph.style.color = outline;
+    slot.glyph.style.textShadow = "none";
+    slot.glyph.textContent = pieceGlyph(p);
+    slot.glyph.classList.remove("hidden");
+  }
+
+  function renderPieces() {
+    const style = (G.pieceStyle === "disc") ? "disc" : "glyph";
+    let used = 0;
+    for (let sq = 0; sq < 64; sq++) {
+      const p = G.st.board[sq];
+      if (p === 0) continue;
+      if (used >= UI.pieceSlots.length) break;
+      const slot = UI.pieceSlots[used];
+      used++;
+      slot.sq = sq;
+      const pos = sqPos(sq);
+      paintSlot(slot, p, pos.x, pos.y, style);
+    }
+    // 多余槽位一律隐藏（播放期零创建零销毁）
+    for (let i = used; i < UI.pieceSlots.length; i++) {
+      const slot = UI.pieceSlots[i];
+      slot.sq = -1;
+      slot.outer.classList.add("hidden");
+      slot.inner.classList.add("hidden");
+      slot.glyph.classList.add("hidden");
+    }
+    UI.slotShown = used;
+  }
+
+  function renderCaptured() {
+    UI.panel.capWhite.textContent = G.capturedWhite.length ? "白失 " + G.capturedWhite.join(" ") : "";
+    UI.panel.capBlack.textContent = G.capturedBlack.length ? "黑失 " + G.capturedBlack.join(" ") : "";
+  }
+
+  function renderMoveLog() {
+    const n = G.moveLog.length;
+    const from = Math.max(0, n - MOVE_LOG_LINES);
+    UI.panel.moveLog.textContent = G.moveLog.slice(from).join("\n");
+  }
+
+  function renderLastMove() {
+    if (G.lastFrom >= 0 && G.lastTo >= 0) {
+      const p1 = sqPos(G.lastFrom), p2 = sqPos(G.lastTo);
+      UI.lastMove[0].style.left = p1.x + "px"; UI.lastMove[0].style.bottom = p1.y + "px";
+      UI.lastMove[1].style.left = p2.x + "px"; UI.lastMove[1].style.bottom = p2.y + "px";
+      UI.lastMove[0].classList.remove("hidden");
+      UI.lastMove[1].classList.remove("hidden");
+    } else {
+      UI.lastMove[0].classList.add("hidden");
+      UI.lastMove[1].classList.add("hidden");
+    }
+  }
+
+  function renderCheck() {
+    if (G.over || !G.st) { UI.checkHL.classList.add("hidden"); return; }
+    if (CHESS_RULES.inCheck(G.st, G.st.turn)) {
+      const ksq = CHESS_RULES.findKing(G.st, G.st.turn);
+      if (ksq >= 0) {
+        const p = sqPos(ksq);
+        UI.checkHL.style.left = p.x + "px"; UI.checkHL.style.bottom = p.y + "px";
+        UI.checkHL.classList.remove("hidden");
+        UI.hint.textContent = TEXT.CHECK;
+      }
+    } else {
+      UI.checkHL.classList.add("hidden");
+    }
+  }
+
+  function renderAll() {
+    renderPieces(); renderCaptured(); renderMoveLog(); renderClocks(); renderTurn(); renderLastMove(); renderCheck();
+  }
+
+  // ---------- 高亮 ----------
+  function clearHighlights() {
+    for (let i = 0; i < 28; i++) UI.legalHL[i].classList.add("hidden");
+    UI.selHL.classList.add("hidden");
+    G.selected = -1;
+    G.legalTargets = new Map();
+    G.legalMoves = [];
+  }
+
+  function selectSquare(sq) {
+    const st = G.st;
+    const p = st.board[sq];
+    if (p === 0) return false;
+    if ((p > 0) !== (st.turn === CHESS_RULES.WHITE)) return false;
+    // 只有「确实存在联机对手」时才限制只操作自己那一方；
+    // 单人打开（无对手）时允许操作双方，避免被锁死。
+    if (!G.localMode && G.peerAlive) {
+      const myTurn = (G.mySide === 1 && st.turn === CHESS_RULES.WHITE) || (G.mySide === 2 && st.turn === CHESS_RULES.BLACK);
+      if (!myTurn) return false;
+    }
+    const moves = CHESS_RULES.legalMoves(st);
+    const mine = [];
+    const targets = new Map();
+    for (const mv of moves) {
+      if (mv.from === sq) {
+        mine.push(mv);
+        if (!targets.has(mv.to)) targets.set(mv.to, []);
+        targets.get(mv.to).push(mv);
+      }
+    }
+    if (mine.length === 0) return false;
+
+    G.selected = sq; G.legalMoves = mine; G.legalTargets = targets;
+
+    const p0 = sqPos(sq);
+    UI.selHL.style.left = p0.x + "px"; UI.selHL.style.bottom = p0.y + "px";
+    UI.selHL.classList.remove("hidden");
+
+    let idx = 0;
+    for (const to of targets.keys()) {
+      if (idx >= 28) break;
+      const pt = sqPos(to);
+      UI.legalHL[idx].style.left = pt.x + "px"; UI.legalHL[idx].style.bottom = pt.y + "px";
+      UI.legalHL[idx].classList.remove("hidden");
+      idx++;
+    }
+    UI.hint.textContent = TEXT.HINT_SELECTED;
+    return true;
+  }
+
+  // ---------- 走子 ----------
+  function moveText(mv, side) {
+    let s = (side === CHESS_RULES.WHITE ? "白 " : "黑 ") + CHESS_RULES.sqName(mv.from) + "→" + CHESS_RULES.sqName(mv.to);
+    if (mv.promo) {
+      s += { [CHESS_RULES.QUEEN]:"=Q", [CHESS_RULES.ROOK]:"=R", [CHESS_RULES.BISHOP]:"=B", [CHESS_RULES.KNIGHT]:"=N" }[mv.promo];
+    }
+    return s;
+  }
+
+  function applyMove(mv, opts) {
+    opts = opts || {};
+    const side = G.st.turn;
+    let captured = G.st.board[mv.to];
+    if (mv.ep) {
+      const capSq = shiftSquare(mv.to, side === CHESS_RULES.WHITE ? -1 : 1, 0);
+      captured = G.st.board[capSq];
+    }
+    CHESS_RULES.make(G.st, mv);
+
+    if (captured !== 0) {
+      // 被吃子记录统一用棋符（图片模式下也用它，便于面板窄空间显示）
+      const glyph = pieceGlyph(captured);
+      if (captured > 0) G.capturedWhite.push(glyph); else G.capturedBlack.push(glyph);
+    }
+    G.moveLog.push(moveText(mv, side));
+    G.lastFrom = mv.from; G.lastTo = mv.to;
+    if (side === CHESS_RULES.WHITE) G.clockWhite += INCREMENT_SEC; else G.clockBlack += INCREMENT_SEC;
+
+    const status = CHESS_RULES.gameStatus(G.st);
+    if (status.over) {
+      G.over = true;
+      if (status.result === "1-0") {
+        G.resultText = TEXT.RESULT_WHITE_WIN;
+        G.resultSub = status.reason === "checkmate" ? TEXT.SUB_CHECKMATE : TEXT.SUB_RESIGN_BLACK;
+      } else if (status.result === "0-1") {
+        G.resultText = TEXT.RESULT_BLACK_WIN;
+        G.resultSub = status.reason === "checkmate" ? TEXT.SUB_CHECKMATE : TEXT.SUB_RESIGN_WHITE;
+      } else {
+        G.resultText = TEXT.RESULT_DRAW_AGREED;
+        if (status.reason === "stalemate") G.resultSub = TEXT.SUB_STALEMATE;
+        else if (status.reason === "fifty") G.resultSub = TEXT.SUB_FIFTY;
+        else if (status.reason === "threefold") G.resultSub = TEXT.SUB_THREEFOLD;
+        else if (status.reason === "insufficient") G.resultSub = TEXT.SUB_INSUFFICIENT;
+        else G.resultSub = TEXT.SUB_DRAW_AGREED;
+      }
+      showResult();
+    }
+    clearHighlights();
+    renderAll();
+    if (!opts.fromRemote) netSendMove(mv);
+  }
+
+  function shiftSquare(sq, dr, df) {
+    const r = (sq >> 3) + dr, f = (sq & 7) + df;
+    if (r < 0 || r > 7 || f < 0 || f > 7) return -1;
+    return r * 8 + f;
+  }
+
+  function tryMove(toSq) {
+    if (G.selected < 0) return false;
+    const cands = G.legalTargets.get(toSq);
+    if (!cands || cands.length === 0) return false;
+    if (cands.length > 1 && cands[0].promo) {
+      G.pendingPromo = cands;
+      showParts(UI.promo.parts, true);
+      setBoardInput(false);
+      return true;
+    }
+    applyMove(cands[0]);
+    return true;
+  }
+
+  function onPromoChosen(promoPiece) {
+    if (!G.pendingPromo) return;
+    let chosen = null;
+    for (const mv of G.pendingPromo) if (mv.promo === promoPiece) { chosen = mv; break; }
+    G.pendingPromo = null;
+    showParts(UI.promo.parts, false);
+    setBoardInput(true);
+    if (chosen) applyMove(chosen);
+  }
+
+  function setBoardInput(on) {
+    for (let sq = 0; sq < 64; sq++) {
+      UI.hitAreas[sq].style.pointerEvents = on ? "auto" : "none";
+    }
+  }
+
+  function onSquareClicked(sq) {
+    if (G.over || G.pendingPromo) return;
+    if (G.selected >= 0 && G.legalTargets.has(sq)) { tryMove(sq); return; }
+    if (G.selected === sq) { clearHighlights(); UI.hint.textContent = TEXT.HINT_OPENING; return; }
+    if (!selectSquare(sq)) { clearHighlights(); UI.hint.textContent = TEXT.HINT_OPENING; }
+  }
+
+  // ---------- 结算 / 按钮 ----------
+  function showResult() {
+    UI.result.title.textContent = G.resultText;
+    UI.result.sub.textContent = G.resultSub;
+    showParts(UI.result.parts, true);
+    setBoardInput(false);
+  }
+  function hideResult() { showParts(UI.result.parts, false); }
+
+  function newGame(opts) {
+    opts = opts || {};
+    G.st = CHESS_RULES.parseFen(START_FEN);
+    G.over = false; G.resultText = ""; G.resultSub = "";
+    G.clockWhite = INITIAL_TIME_SEC; G.clockBlack = INITIAL_TIME_SEC;
+    G.moveLog = []; G.capturedWhite = []; G.capturedBlack = [];
+    G.lastFrom = -1; G.lastTo = -1;
+    G.pendingPromo = null; G.drawCooldown = [0, 0]; G.drawPendingFrom = -1;
+    clearHighlights();
+    hideResult();
+    showParts(UI.promo.parts, false);
+    showParts(UI.drawDlg.parts, false);
+    setBoardInput(true);
+    UI.hint.textContent = TEXT.HINT_OPENING;
+    renderAll();
+    if (!opts.fromRemote) netSendEvent(1, 0, 0, 0, "");
+  }
+
+  function doResign() {
+    if (G.over) return;
+    G.over = true;
+    const resignSide = G.st.turn === CHESS_RULES.WHITE ? 1 : 2;
+    if (G.st.turn === CHESS_RULES.WHITE) {
+      G.resultText = TEXT.RESULT_BLACK_WIN; G.resultSub = TEXT.SUB_RESIGN_WHITE;
+    } else {
+      G.resultText = TEXT.RESULT_WHITE_WIN; G.resultSub = TEXT.SUB_RESIGN_BLACK;
+    }
+    showResult();
+    netSendEvent(2, resignSide - 1, 0, 0, "");
+  }
+
+  function doDrawRequest() {
+    if (G.over) return;
+    const sideIdx = G.st.turn === CHESS_RULES.WHITE ? 0 : 1;
+    if (G.drawCooldown[sideIdx] > 0) { UI.hint.textContent = TEXT.BTN_DRAW_USED; return; }
+    G.drawCooldown[sideIdx] = DRAW_COOLDOWN_SEC;
+    if (G.localMode) {
+      showParts(UI.drawDlg.parts, true);
+      setBoardInput(false);
+    } else {
+      netSendEvent(3, sideIdx, 0, 0, "");
+      UI.hint.textContent = "已发出和棋请求";
+    }
+  }
+
+  function onDrawAccepted() {
+    showParts(UI.drawDlg.parts, false);
+    setBoardInput(true);
+    G.over = true;
+    G.resultText = TEXT.RESULT_DRAW_AGREED; G.resultSub = TEXT.SUB_DRAW_AGREED;
+    showResult();
+    if (G.localMode) netSendEvent(4, 0, 0, 0, "");
+  }
+
+  function onDrawRejected() {
+    showParts(UI.drawDlg.parts, false);
+    setBoardInput(true);
+    UI.hint.textContent = "对方拒绝和棋，继续对局";
+    if (G.localMode) netSendEvent(7, 0, 0, 0, "");
+  }
+
+  function togglePieceStyle() {
+    G.pieceStyle = (G.pieceStyle === "disc") ? "glyph" : "disc";
+    UI.panel.btnStyle.textContent = pieceStyleLabel(G.pieceStyle);
+    UI.hint.textContent = "棋子样式：" + pieceStyleNameCn(G.pieceStyle);
+    renderPieces();
+  }
+
+  function toggleLocalMode() {
+    G.localMode = !G.localMode;
+    UI.panel.btnLocal.textContent = G.localMode ? "联机" : TEXT.BTN_LOCAL;
+    UI.hint.textContent = G.localMode ? "已切换到同屏轮流" : TEXT.TURN_WHITE;
+    if (G.localMode) netBroadcast({ type: "mode", local: true });
+  }
+
+  // ---------- 联机模拟（BroadcastChannel + localStorage 双通道） ----------
+  // 说明：这是**同机双窗口同步的模拟**，用来演示「两端局面实时一致」。
+  // 真机上对应 game.ServerSignal / RegisterServerSignalHandler，服务端节点图负责广播。
+  const CHANNEL_NAME = "chess_biji_demo_sync_v1";
+  const LS_KEY = "chess_biji_demo_state_v1";
+  const INSTANCE_ID = Math.random().toString(36).slice(2, 10);
+  let channel = null;
+  let netReady = false;
+
+  function initNet() {
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        channel = new BroadcastChannel(CHANNEL_NAME);
+        channel.onmessage = (ev) => onNetMessage(ev.data);
+        netReady = true;
+      }
+    } catch (e) { netReady = false; }
+    window.addEventListener("storage", (ev) => {
+      if (ev.key === LS_KEY && ev.newValue) {
+        try { onNetMessage(JSON.parse(ev.newValue)); } catch (e) {}
+      }
+    });
+    // 身份分配：先打开的是白方，后打开的是黑方（用 localStorage 里的占用标记）
+    // 【降级规则】若 30 秒内没有另一个实例在活跃（对手已关闭 / 本来就只有一个人），
+    // 则本端可操作双方（等价于同屏），否则单人玩家会被锁死成黑方、什么都点不了。
+    try {
+      const occupied = JSON.parse(localStorage.getItem("chess_biji_demo_seat_v1") || "null");
+      const now = Date.now();
+      if (!occupied || now - occupied.at > 30000) {
+        localStorage.setItem("chess_biji_demo_seat_v1", JSON.stringify({ id: INSTANCE_ID, at: now }));
+        G.mySide = 1;
+        G.peerAlive = false;
+      } else if (occupied.id === INSTANCE_ID) {
+        G.mySide = 1;
+        G.peerAlive = false;
+      } else {
+        G.mySide = 2;
+        G.peerAlive = true;   // 确实有另一个实例在活跃
+      }
+    } catch (e) { G.mySide = 1; G.peerAlive = false; }
+    UI.hint.textContent = (!G.peerAlive) ? "同屏轮流：两个人轮流点这块棋盘" : (G.mySide === 1 ? "你是白方" : "你是黑方");
+    setInterval(() => {
+      try {
+        const occ = JSON.parse(localStorage.getItem("chess_biji_demo_seat_v1") || "null");
+        if (occ && occ.id === INSTANCE_ID) {
+          occ.at = Date.now();
+          localStorage.setItem("chess_biji_demo_seat_v1", JSON.stringify(occ));
+        }
+        // 对手是否还活着：占用标记不是自己、且 30 秒内更新过
+        G.peerAlive = !!(occ && occ.id !== INSTANCE_ID && (Date.now() - occ.at) <= 30000);
+      } catch (e) {}
+    }, 5000);
+  }
+
+  function netBroadcast(msg) {
+    msg._from = INSTANCE_ID;
+    if (channel) { try { channel.postMessage(msg); } catch (e) {} }
+    try { localStorage.setItem(LS_KEY, JSON.stringify(msg)); } catch (e) {}
+  }
+
+  // 信号格式与 lua 第 9 区一致：{eventType, a, b, c, fen}
+  function netSendEvent(eventType, a, b, c, fen) {
+    if (!netReady) return;
+    netBroadcast({ sig: true, eventType, a: a || 0, b: b || 0, c: c || 0, fen: fen || "" });
+  }
+  function netSendMove(mv) {
+    const promoCode = mv.promo === CHESS_RULES.QUEEN ? 1 : mv.promo === CHESS_RULES.ROOK ? 2 :
+                      mv.promo === CHESS_RULES.BISHOP ? 3 : mv.promo === CHESS_RULES.KNIGHT ? 4 : 0;
+    netSendEvent(0, mv.from, mv.to, promoCode, CHESS_RULES.fenOf(G.st));
+  }
+
+  let lastAppliedFen = "";
+  function onNetMessage(msg) {
+    if (!msg || msg._from === INSTANCE_ID) return;
+    if (msg.type === "mode" && msg.local) { G.localMode = true; return; }
+    if (!msg.sig) return;
+    const { eventType, a, b, c, fen } = msg;
+
+    if (eventType === 0) {
+      // 走子：以广播 fen 为准重建，避免两端分叉
+      if (fen) {
+        if (fen === lastAppliedFen) return;
+        lastAppliedFen = fen;
+        G.st = CHESS_RULES.parseFen(fen);
+        G.lastFrom = a; G.lastTo = b;
+        renderAll();
+        clearHighlights();
+        return;
+      }
+      // 没有 fen 时按走法重算
+      const wantPromo = { 0: null, 1: CHESS_RULES.QUEEN, 2: CHESS_RULES.ROOK, 3: CHESS_RULES.BISHOP, 4: CHESS_RULES.KNIGHT }[c] || null;
+      const cands = [];
+      for (const mv of CHESS_RULES.legalMoves(G.st)) {
+        if (mv.from === a && mv.to === b && ((wantPromo === null && !mv.promo) || (wantPromo !== null && mv.promo === wantPromo))) cands.push(mv);
+      }
+      if (cands.length) applyMove(cands[0], { fromRemote: true });
+    } else if (eventType === 1) {
+      newGame({ fromRemote: true });
+    } else if (eventType === 2) {
+      G.over = true;
+      if (a === 0) { G.resultText = TEXT.RESULT_BLACK_WIN; G.resultSub = TEXT.SUB_RESIGN_WHITE; }
+      else { G.resultText = TEXT.RESULT_WHITE_WIN; G.resultSub = TEXT.SUB_RESIGN_BLACK; }
+      showResult();
+    } else if (eventType === 3) {
+      showParts(UI.drawDlg.parts, true);
+      setBoardInput(false);
+    } else if (eventType === 4) {
+      showParts(UI.drawDlg.parts, false);
+      G.over = true;
+      G.resultText = TEXT.RESULT_DRAW_AGREED; G.resultSub = TEXT.SUB_DRAW_AGREED;
+      showResult();
+    } else if (eventType === 7) {
+      UI.hint.textContent = "对方拒绝和棋，继续对局";
+    }
+  }
+
+  // ---------- 主循环（棋钟） ----------
+  let lastFrame = performance.now();
+  function tick(now) {
+    const dt = Math.min(0.25, (now - lastFrame) / 1000);
+    lastFrame = now;
+    if (G.st && !G.over) {
+      if (G.st.turn === CHESS_RULES.WHITE) {
+        G.clockWhite -= dt;
+        if (G.clockWhite <= 0) { G.clockWhite = 0; G.over = true; G.resultText = TEXT.RESULT_BLACK_WIN; G.resultSub = TEXT.SUB_TIMEOUT_WHITE; showResult(); }
+      } else {
+        G.clockBlack -= dt;
+        if (G.clockBlack <= 0) { G.clockBlack = 0; G.over = true; G.resultText = TEXT.RESULT_WHITE_WIN; G.resultSub = TEXT.SUB_TIMEOUT_BLACK; showResult(); }
+      }
+    }
+    for (let i = 0; i < 2; i++) if (G.drawCooldown[i] > 0) G.drawCooldown[i] = Math.max(0, G.drawCooldown[i] - dt);
+    G.clockTimer += dt;
+    if (G.clockTimer >= CLOCK_REFRESH_SEC) { G.clockTimer = 0; renderClocks(); }
+    requestAnimationFrame(tick);
+  }
+
+  // ---------- 视口缩放 ----------
+  let scaleNow = 1;
+  function fitStage() {
+    const stage = document.getElementById("stage");
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const scale = Math.min(vw / BASE_W, vh / BASE_H);
+    scaleNow = scale;
+    // 必须保留 translate(-50%,-50%)：它把舞台中心锚在视口中心，
+    // 只写 scale 会让舞台左上角贴在视口左上角，右侧与下侧内容被切掉。
+    stage.style.transform = "translate(-50%, -50%) scale(" + scale + ")";
+  }
+
+  // ---------- 量测探针（默认关闭，?measure=1） ----------
+  function installMeasure() {
+    const params = new URLSearchParams(location.search);
+    if (!params.has("measure")) return;
+    window.__measure = function () {
+      // 【量测口径】stage 被 transform:scale 缩放，getBoundingClientRect 返回的是缩放后尺寸。
+      // 因此必须除以「设计基准宽高」×「当前缩放值」，才能得到设计基准下的百分比。
+      // 直接用 rect 宽高做分母会把所有百分比算错（曾导致面板 left 显示 98.7%，误判为出界）。
+      const stageEl = document.getElementById("stage");
+      const rect = stageEl.getBoundingClientRect();
+      const curScale = scaleNow || 1;
+      const baseLeft = rect.left, baseTop = rect.top;
+      const baseW = BASE_W * curScale, baseH = BASE_H * curScale;
+      const out = [];
+      document.querySelectorAll("[data-anchor-id]").forEach(function (el) {
+        const r = el.getBoundingClientRect();
+        // 初始隐藏的元素尺寸为 0，单独标记，不参与越界判定
+        const hidden = (r.width === 0 || r.height === 0);
+        out.push({
+          id: el.getAttribute("data-anchor-id"),
+          hidden: hidden,
+          leftPct: +((r.left - baseLeft) / baseW * 100).toFixed(3),
+          topPct: +((r.top - baseTop) / baseH * 100).toFixed(3),
+          wPct: +(r.width / baseW * 100).toFixed(3),
+          hPct: +(r.height / baseH * 100).toFixed(3),
+          cxPct: +((r.left + r.width / 2 - baseLeft) / baseW * 100).toFixed(3),
+          cyPct: +((r.top + r.height / 2 - baseTop) / baseH * 100).toFixed(3),
+        });
+      });
+      document.title = "MEASURE_READY";
+      console.log("MEASURE_RESULT " + JSON.stringify(out));
+      // 自动化量测：把结果连同缩放信息 POST 回本地服务（仅在带 reportPort 时）
+      const rp = new URLSearchParams(location.search).get("reportPort");
+      if (rp) {
+        try {
+          fetch("http://127.0.0.1:" + rp + "/measure", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              items: out,
+              scale: scaleNow,
+              contentW: document.getElementById("stage").getBoundingClientRect().width,
+              contentH: document.getElementById("stage").getBoundingClientRect().height,
+              viewportW: window.innerWidth, viewportH: window.innerHeight,
+            }),
+          }).catch(() => {});
+        } catch (e) {}
+      }
+      return JSON.stringify(out, null, 2);
+    };
+    window.addEventListener("load", () => setTimeout(() => window.__measure(), 300));
+  }
+
+  // ---------- 自检（?selftest=1） ----------
+  function installSelfTest() {
+    window.__selfTest = function () {
+      const checks = [];
+      const add = (name, pass, detail) => checks.push({ name, pass, detail: detail || "" });
+
+      // 0 启动瞬间不得有任何弹窗（放在最前，此时尚未调用过 newGame/hideResult，
+      //   反映的是 boot 后的真实初始画面）
+      const startupDialogVisible = [
+        ...UI.result.parts, ...UI.promo.parts, ...UI.drawDlg.parts
+      ].some((el) => el && !el.classList.contains("hidden"));
+      add("no_dialog_on_boot", !startupDialogVisible);
+
+      // 1 棋盘 64 格存在且颜色正确（a1 深格）
+      let sqOk = true;
+      for (let sq = 0; sq < 64; sq++) {
+        const el = UI.squares[sq];
+        if (!el) { sqOk = false; break; }
+        const isDark = (((sq >> 3) + (sq & 7)) % 2 === 0);
+        const want = isDark ? COLOR.SQ_DARK : COLOR.SQ_LIGHT;
+        if (el.style.background.replace(/\s/g, "") !== want.replace(/\s/g, "")) { sqOk = false; break; }
+      }
+      add("board_64_squares_a1_dark", sqOk);
+
+      // 2 初始摆位
+      const startSt = CHESS_RULES.parseFen(START_FEN);
+      let placementOk = true;
+      for (let sq = 0; sq < 64; sq++) {
+        if (startSt.board[sq] !== G.st.board[sq]) { placementOk = false; break; }
+      }
+      add("initial_placement", placementOk);
+
+      // 3 perft 深度 1-2
+      let perftOk = true, perftDetail = "";
+      for (const c of PERFT_CASES) {
+        const st = CHESS_RULES.parseFen(c.fen);
+        const d1 = CHESS_RULES.perft(st, 1);
+        if (d1 !== c.d1) { perftOk = false; perftDetail += `${c.name} d1 got=${d1} exp=${c.d1}; `; }
+        const d2 = CHESS_RULES.perft(CHESS_RULES.parseFen(c.fen), 2);
+        if (d2 !== c.d2) { perftOk = false; perftDetail += `${c.name} d2 got=${d2} exp=${c.d2}; `; }
+      }
+      add("perft_d1_d2", perftOk, perftDetail);
+
+      // 4 点 e2 再点 e4 → 兵走到 e4
+      newGame({ fromRemote: true });
+      const e2 = 12, e4 = 28;
+      selectSquare(e2);
+      const moved = tryMove(e4);
+      const afterE4 = G.st.board[e4];
+      add("click_e2_e4_moves_pawn", moved && afterE4 === CHESS_RULES.PAWN, "board[e4]=" + afterE4);
+
+      // 5 点 e2 再点 e5 → 非法，不生效
+      newGame({ fromRemote: true });
+      selectSquare(e2);
+      const bad = tryMove(36);   // e5
+      add("click_e2_e5_rejected", !bad && G.st.board[36] === 0, "board[e5]=" + G.st.board[36]);
+
+      // 6 吃过路兵
+      newGame({ fromRemote: true });
+      G.st = CHESS_RULES.parseFen("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1");
+      renderAll();
+      const epMove = CHESS_RULES.findMove(G.st, "e5d6");
+      add("en_passant_available", epMove !== null && epMove.ep === true, "uci=e5d6");
+
+      // 7 易位
+      newGame({ fromRemote: true });
+      G.st = CHESS_RULES.parseFen("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
+      renderAll();
+      const castleMove = CHESS_RULES.findMove(G.st, "e1g1");
+      add("castling_available", castleMove !== null && castleMove.castle === true, "uci=e1g1");
+
+      // 8 升变
+      newGame({ fromRemote: true });
+      G.st = CHESS_RULES.parseFen("8/P7/8/8/8/8/7k/4K3 w - - 0 1");
+      renderAll();
+      // a7 = rank6,file0 = 48；a8 = rank7,file0 = 56
+      const promos = CHESS_RULES.legalMoves(G.st).filter(mv => mv.from === 48 && mv.to === 56);
+      add("promotion_4_options", promos.length === 4, "count=" + promos.length);
+
+      // 9 一步将死
+      newGame({ fromRemote: true });
+      G.st = CHESS_RULES.parseFen("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
+      renderAll();
+      const st9 = CHESS_RULES.gameStatus(G.st);
+      add("checkmate_detected", st9.over && st9.reason === "checkmate", "reason=" + st9.reason);
+
+      // 10 逼和
+      G.st = CHESS_RULES.parseFen("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1");
+      renderAll();
+      const st10 = CHESS_RULES.gameStatus(G.st);
+      add("stalemate_detected", st10.over && st10.reason === "stalemate", "reason=" + st10.reason);
+
+      // 11 棋钟：走一步后走子方 +10
+      newGame({ fromRemote: true });
+      const beforeW = G.clockWhite;
+      selectSquare(12); tryMove(28);
+      add("clock_increment", G.clockWhite === beforeW + INCREMENT_SEC, "delta=" + (G.clockWhite - beforeW));
+
+      // 12 重开复位
+      newGame({ fromRemote: true });
+      add("newgame_resets_clock", G.clockWhite === INITIAL_TIME_SEC && G.moveLog.length === 0,
+          "clock=" + G.clockWhite + " log=" + G.moveLog.length);
+
+      // 13 联机模拟：收到走子消息 → 棋盘更新
+      newGame({ fromRemote: true });
+      const fenBefore = CHESS_RULES.fenOf(G.st);
+      onNetMessage({ _from: "other", sig: true, eventType: 0, a: 12, b: 28, c: 0,
+                     fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" });
+      add("net_receive_updates_board", CHESS_RULES.fenOf(G.st) !== fenBefore && G.st.board[28] === CHESS_RULES.PAWN);
+
+      // 14 无调试显示（默认状态）
+      const debugVisible = document.getElementById("debugLayer").classList.contains("on");
+      add("no_debug_by_default", !debugVisible);
+
+      // 16 棋盘格数 = 64，点击区 = 64
+      add("hit_areas_64", UI.hitAreas.filter(Boolean).length === 64, "n=" + UI.hitAreas.filter(Boolean).length);
+
+      // 17 棋子槽位 32 个（棋盘同时最多 32 枚棋子在场）
+      const slotN = UI.pieceSlots.filter(Boolean).length;
+      add("piece_slots_32", slotN === 32, "n=" + slotN);
+
+      // 18 两档样式都能把全部棋子画出来（切档只改显隐，控件不重建）
+      let styleOk = true, styleDetail = "";
+      const wantShown = G.st.board.filter((v) => v !== 0).length;
+      for (const st of ["disc", "glyph"]) {
+        G.pieceStyle = st;
+        renderPieces();
+        const shown = UI.pieceSlots.filter((s) => !s.glyph.classList.contains("hidden")).length;
+        if (shown !== wantShown) { styleOk = false; styleDetail += st + " " + shown + "/" + wantShown + "; "; }
+      }
+      add("piece_style_two_tiers", styleOk, styleDetail);
+      G.pieceStyle = "disc";
+      renderPieces();
+
+      // 复位到干净开局
+      newGame({ fromRemote: true });
+
+      const ok = checks.every(c => c.pass);
+      return { ok, checks };
+    };
+  }
+
+  // ---------- 调试层（?debug=1） ----------
+  function installDebug() {
+    const params = new URLSearchParams(location.search);
+    if (!params.has("debug")) return;
+    const layer = document.getElementById("debugLayer");
+    layer.classList.add("on");
+    document.querySelectorAll("[data-anchor-id]").forEach((el) => {
+      const r = el.getBoundingClientRect();
+      const s = document.getElementById("stage").getBoundingClientRect();
+      const scale = s.width / BASE_W;
+      const box = document.createElement("div");
+      box.className = "anchor-line";
+      box.style.left = ((r.left - s.left) / scale) + "px";
+      box.style.bottom = ((s.bottom - r.bottom) / scale) + "px";
+      box.style.width = (r.width / scale) + "px";
+      box.style.height = (r.height / scale) + "px";
+      layer.appendChild(box);
+    });
+  }
+
+  // ---------- 启动 ----------
+  function boot() {
+    // 【必须放在最前】params 被后面多处使用（probe/auto/selftest）。
+    // 教训：曾两次把使用点写在声明之前，触发 const 的暂时性死区（TDZ）错误，
+    //       表现为整页白屏、自检不返回，且错误被 catch 吞掉难以定位。
+    const params = new URLSearchParams(location.search);
+
+    buildBoard(); buildPanel(); buildResult(); buildPromo(); buildDrawDlg();
+    G.st = CHESS_RULES.parseFen(START_FEN);
+    G.uiReady = true;
+    renderAll();
+    setBoardInput(true);
+    initNet();
+    fitStage();
+    window.addEventListener("resize", fitStage);
+    requestAnimationFrame(tick);
+    installMeasure();
+    installSelfTest();
+    installDebug();
+    // 几何探针（?probe=1）：上报 viewport/stage/棋盘/面板 的真实几何，供自动化核对
+    if (params.has("probe")) {
+      setTimeout(() => {
+        const rp = params.get("reportPort");
+        const stageEl = document.getElementById("stage");
+        const vp = document.getElementById("viewport");
+        const g = (el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), right: Math.round(r.right), bottom: Math.round(r.bottom) }; };
+        const info = {
+          viewport: { w: window.innerWidth, h: window.innerHeight },
+          innerDocW: document.documentElement.clientWidth,
+          innerDocH: document.documentElement.clientHeight,
+          devicePixelRatio: window.devicePixelRatio,
+          scaleNow: scaleNow,
+          stageRect: g(stageEl),
+          viewportRect: g(vp),
+          boardSq0: g(UI.squares[0]),
+          boardSq63: g(UI.squares[63]),
+          panelBg: g(UI.panel.bg),
+          btnLocal: g(UI.panel.btnLocal),
+          stageTransform: stageEl.style.transform,
+          bodyOverflow: getComputedStyle(document.body).overflow,
+        };
+        console.log("PROBE_RESULT " + JSON.stringify(info));
+        if (rp) {
+          try {
+            fetch("http://127.0.0.1:" + rp + "/probe", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(info),
+            }).catch(() => {});
+          } catch (e) {}
+        }
+      }, 700);
+    }
+
+    // 自检模式：跑完把结果写进 title，并把结果 POST 回本地服务（供自动化读取）
+
+    // 自动化验证用：?auto=[12,28] 依次点击这些格号（不影响正常打开）
+    // 【教训】params 必须先声明再使用：此前 auto 段写在 params 声明之前，
+    // 触发 const 的暂时性死区（TDZ）错误，被 catch 吞掉，导致序列根本没执行。
+    const autoParam = params.get("auto");
+    if (autoParam) {
+      try {
+        const seq = JSON.parse(decodeURIComponent(autoParam));
+        setTimeout(() => {
+          for (const sq of seq) {
+            onSquareClicked(sq);
+          }
+        }, 500);
+      } catch (e) { console.log("AUTO_SEQ_ERROR " + e.message); }
+    }
+    if (params.has("selftest")) {
+      setTimeout(() => {
+        const result = window.__selfTest();
+        document.title = result.ok ? "SELFTEST_PASS" : "SELFTEST_FAIL";
+        console.log("SELFTEST_RESULT " + JSON.stringify(result));
+        const port = params.get("reportPort");
+        if (port) {
+          try {
+            fetch("http://127.0.0.1:" + port + "/report", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(result),
+            }).catch(() => {});
+          } catch (e) {}
+        }
+      }, 600);
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+})();
+</script>
+</body>
+</html>

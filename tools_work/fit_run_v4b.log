@@ -1,0 +1,22 @@
+[start] 2026-11-03T21:51:54.9203457+08:00
+global bbox: (11, 12, 245, 245)
+PAWN    shapes=14  IoU=0.9657  recall=0.9908  precision=0.9744  comps=1  min_dim=0.0200
+KNIGHT  shapes=18  IoU=0.9439  recall=0.9931  precision=0.9502  comps=1  min_dim=0.0200
+BISHOP  shapes=20  IoU=0.9642  recall=0.9908  precision=0.9730  comps=1  min_dim=0.0200
+ROOK    shapes=12  IoU=0.9304  recall=0.9982  precision=0.9320  comps=1  min_dim=0.0943
+QUEEN   shapes=25  IoU=0.9191  recall=0.9805  precision=0.9362  comps=1  min_dim=0.0260
+KING    shapes=22  IoU=0.9859  recall=0.9962  precision=0.9896  comps=1  min_dim=0.0200
+wrote D:\输出目录\国际象棋\docs\pieces-fit-generated.lua
+wrote D:\输出目录\国际象棋\docs\pieces-fit-generated.json
+wrote D:\输出目录\国际象棋\docs\pieces-fit-preview.png
+
+=== summary ===
+PAWN    14 shapes  IoU 0.9657  comps 1
+KNIGHT  18 shapes  IoU 0.9439  comps 1
+BISHOP  20 shapes  IoU 0.9642  comps 1
+ROOK    12 shapes  IoU 0.9304  comps 1
+QUEEN   25 shapes  IoU 0.9191  comps 1
+KING    22 shapes  IoU 0.9859  comps 1
+total 111 shapes, mean IoU 0.9515
+[exitcode] 0
+[end] 2026-11-03T21:59:08.6028398+08:00

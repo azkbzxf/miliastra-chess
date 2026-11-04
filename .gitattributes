@@ -1,0 +1,14 @@
+# 行尾统一按 LF 存储与检出。
+#
+# 背景（实测，见 docs/github-release.md 第三节 0）：仓库里有 28 个文件是 CRLF、
+# 5 个是 LF/CRLF 混合。其中 proto/chess_demo.html 是 CRLF，而
+# tools_work/consistency_check.cjs 要拿它和 lua/ 逐项比对 —— 不统一行尾会误报。
+#
+# 三份 levelScript.lua 恰好都是纯 LF，本规则不会改动它们。
+* text=auto eol=lf
+
+# 二进制资源：不做行尾转换，也不参与文本 diff
+*.png binary
+*.jpg binary
+*.zip binary
+*.mp3 binary
