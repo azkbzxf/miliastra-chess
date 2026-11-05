@@ -1,0 +1,53 @@
+feat: 用 Ayaya_Miliastra_Editor 编写联机节点图代码
+
+按用户要求，参照 https://github.com/AyayaXiaowang/Ayaya_Miliastra_Editor
+的 Graph Code 规范，编写双人联机所需的服务端节点图。
+
+## 交付
+nodegraph/assets/资源库/项目存档/黑白棋局/
+  ├── 管理配置/信号/signal_chess_sync.py           信号定义（5 参数）
+  └── 节点图/server/实体节点图/chess/
+      └── graph_chess_sync_broadcast.py             中继节点图
+
+结构只有一条链路：监听信号(ChessSync) → 转发复合节点 → 发送给客户端
+
+## 关键发现：Ayaya 缺少一个必需节点
+核对 plugins/nodes/server/__init__.pyi（48,137 字节，438 个节点定义），
+信号相关只有两个：
+    发送信号(game, 信号名, **kwargs)          -> 接收方是服务端节点图
+    监听信号(game, 信号名, **kwargs)          -> 客户端→服务端，可用
+**没有【发送客户端脚本信号】**（按 客户端/信号/广播 三关键词全文检索均未命中）。
+
+这不是命名差异，是能力缺口。官方文档《客户端控件和客户端脚本》第五节明确：
+  - 客户端用 ServerSignal:SendSignal() 发给服务器
+  - 服务器必须用节点【发送客户端脚本信号】才能到达客户端脚本的
+    RegisterServerSignalHandler
+而【发送信号】的官方定义是「向关卡全局发送一个自定义信号」，收方是服务端节点图。
+两者名字极像，选错的表现是对方永远没反应且日志无报错。
+
+因此节点图文件采用「可编译 + 明确占位」策略：
+  - 用 Ayaya 能表达的部分把上游【监听信号】接好
+  - 转发处放【发送信号】占位，并写清 TODO 与替换步骤
+  - 导入后需在编辑器把该处换成【发送客户端脚本信号】（约 30 秒）
+这样做的好处是 validate-graphs 能通过，可先验证上游监听是否接对。
+
+## 信号协议
+ChessSync 5 个参数，顺序不可换（客户端 Lua 按下标读 params）：
+  eventType(整数) a(整数) b(整数) c(整数) fen(字符串)
+eventType: 0走子 1新局 2认输 3求和 4同意和棋 6身份分配 7拒绝和棋
+
+## 校验
+- py_compile 语法检查通过（两个文件 exit 0）
+- AST 结构检查：复合节点 + 事件类 + on_ChessSync + register_handlers 齐全
+- 联机链路在 UI 模拟器实测通过（等价表达 serverLogic sendClientScriptSignal）：
+  Player1 走 e2→e4 → 服务端 inbound values=[0,12,28,0,""]
+  → 广播 players=[1,2] delivered=true
+  → 切 Player2 视角：白兵在 e4、记录「白 e2→e4」、轮次切黑方、双方棋钟在走
+
+## 未验证
+没有在 Ayaya 仓库内跑 validate-file（本机无该项目的 Python 3.10-3.12 + PyQt6
+运行环境）。最可能出问题的是占位调用 发送信号(...) 的 kwargs 参数名是否符合
+其校验规则；该段本就是占位，最终会被替换。
+
+## 文档
+docs/联机节点图说明.md：格式、参数表、手补步骤、验收判据、能力边界
