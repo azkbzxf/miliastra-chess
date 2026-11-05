@@ -1407,7 +1407,14 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     if ((canvasW + boardSide) / 2 > canvasW - panelW) {
       boardLeft = (panelLeft - boardSide) / 2;
     }
-    const fontScale = canvasH / BASE_H;
+    // 【v1.11 修 bug：必须取宽高两方向的较小者，不能只看高度】
+    //   手机 4:3（1280×960）下「切换本地同屏」会被截成「切换本地」、两个棋钟挤在一起。
+    //   根因：字号只按 canvasH/900 缩放（960/900 = 1.067 变大 6.7%），
+    //   而面板宽度按 canvasW 比例算（1280*0.22 = 281.6，只有基准 352 的 0.80）。
+    //   文字变大而容器缩小 → 相对溢出 1.33 倍，必然裁切。
+    //   取 min 后：1600×900 / 2100×900 / 1280×720 / 1560×720 四档数值**逐位不变**，
+    //   只有原本出错的 4:3 由 1.067 修正为 0.800。与 lua/levelScript.lua 同式。
+    const fontScale = Math.min(canvasW / BASE_W, canvasH / BASE_H);
     const font = (base) => Math.max(FONT.MIN_FONT, Math.floor(base * fontScale));
     return { canvasW, canvasH, boardSide, cell, boardLeft, boardBottom,
              panelW, panelLeft, panelBottom, panelH, font, fontScale,

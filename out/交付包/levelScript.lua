@@ -318,7 +318,10 @@ local CONFIG = {
     PROMO_OPTION = 24,
     MIN_FONT     = 16,   -- 缩放后下限
   },
-  BASE_CANVAS_H = 900,   -- 字号缩放基准（10.7）
+  BASE_CANVAS_H = 900,   -- 字号缩放基准（高）
+  -- 【v1.11】字号缩放必须同时看宽：面板宽度是按 canvasW 的比例算的，
+  -- 只按高度缩放会在 4:3 这类「更高但更窄」的画布上把文字放大到装不下（见 LAYOUT.compute）。
+  BASE_CANVAS_W = 1600,  -- 字号缩放基准（宽）
 
   -- ===== 全部玩家可见文案（与策划案第 9 节逐字一致）=====
   -- 全部玩家可见文案：逐字照 docs/策划案.md 9.2–9.6，改这里必须同步改 Demo
@@ -1629,8 +1632,25 @@ function LAYOUT.compute(canvasW, canvasH)
     boardLeft = (panelLeft - boardSide) / 2
   end
 
-  -- 字号缩放：基准 900 高，向下取整，下限 16（10.7）
-  local fontScale = canvasH / CONFIG.BASE_CANVAS_H
+  -- 字号缩放：基准 1600×900，向下取整，下限 16。
+  --
+  -- 【v1.11 修 bug：必须取宽高两个方向的较小者，不能只看高度】
+  --   用户报的现象：手机 4:3（1280×960）下面板按钮「切换本地同屏」被截成「切换本地」、
+  --   两个棋钟挤在一起。根因是字号只按 canvasH/900 缩放：
+  --     4:3 的画布更高 → fontScale = 960/900 = 1.066（字号变大 6.6%）
+  --     但面板宽度 = canvasW * 0.22 = 281.6px，只有基准 352px 的 0.80
+  --   → 文字变大 6.6% 而容器缩到 80%，相对溢出 1.33 倍，必然被裁。
+  --
+  --   所以缩放系数改成 min(宽比, 高比)：取两个方向的较小者，
+  --   保证「文字永远不会比它所在的容器长得快」。
+  --   【为什么这样不会影响已验证的画布】
+  --     pc-16-9  1600×900  → min(1.000, 1.000) = 1.000（不变）
+  --     pc-21-9  2100×900  → min(1.313, 1.000) = 1.000（不变）
+  --     mobile-16-9  1280×720 → min(0.800, 0.800) = 0.800（不变）
+  --     mobile-19.5-9 1560×720 → min(0.975, 0.800) = 0.800（不变）
+  --     mobile-4-3   1280×960  → min(0.800, 1.067) = 0.800（**由 1.067 修正为 0.800**）
+  --   只有原本就出错的那一档会变，其余四档逐位不变 —— 这是选 min 而不是换别的公式的原因。
+  local fontScale = math.min(canvasW / CONFIG.BASE_CANVAS_W, canvasH / CONFIG.BASE_CANVAS_H)
   local function font(base)
     local v = math.floor(base * fontScale)
     if v < CONFIG.FONT.MIN_FONT then v = CONFIG.FONT.MIN_FONT end

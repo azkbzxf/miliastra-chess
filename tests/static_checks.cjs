@@ -1315,6 +1315,54 @@ function checkPanelNoOverlap(src) {
 }
 
 // ===========================================================================
+// CHECK-8 字号缩放必须同时看宽高（issue #1 后续实测发现的 4:3 截断 bug）：
+//   现象：手机 4:3（1280×960）下面板按钮「切换本地同屏」被截成「切换本地」。
+//   根因：fontScale 只按 canvasH/BASE_CANVAS_H 缩放，而面板宽度按 canvasW 的比例算。
+//     4:3 画布更高 → fontScale = 960/900 = 1.067（字变大）
+//     但面板宽 = 1280*0.22 = 281.6，只有基准 352 的 0.80（容器变小）
+//     → 文字变大 6.7% 而容器缩到 80%，相对溢出 1.33 倍，必然裁切。
+//   判据：fontScale 的表达式里必须同时出现 canvasW 与 canvasH（即用 min 取较小者），
+//         且 CONFIG 里必须有 BASE_CANVAS_W。只有一项就说明又退回「只看高度」。
+//   为什么单独成一项：这条 bug 在 1600×900 / 1280×720 上都**看不出来**，
+//   只有 4:3 这种「更高但更窄」的画布才暴露，靠人眼验会一直漏。
+function checkFontScaleUsesBothAxes(src) {
+  const detail = [];
+  const m = /local\s+fontScale\s*=\s*([^\n]+)/.exec(src);
+  if (!m) return { ok: false, detail: "找不到 `local fontScale = ...` 定义" };
+  const expr = m[1].trim();
+  const hasW = /\bcanvasW\b/.test(expr);
+  const hasH = /\bcanvasH\b/.test(expr);
+  const hasMin = /\bmath\.min\s*\(/.test(expr);
+  const hasBaseW = /\bBASE_CANVAS_W\s*=\s*\d+/.test(src);
+  const hasBaseH = /\bBASE_CANVAS_H\s*=\s*\d+/.test(src);
+
+  if (!hasW) detail.push(`fontScale 表达式不含 canvasW（只看高度会在 4:3 画布把字放大到装不下）：${expr}`);
+  if (!hasH) detail.push(`fontScale 表达式不含 canvasH：${expr}`);
+  if (!hasMin) detail.push(`fontScale 没用 math.min(...) 取两方向较小者：${expr}`);
+  if (!hasBaseW) detail.push("CONFIG 里缺 BASE_CANVAS_W（宽度基准）");
+  if (!hasBaseH) detail.push("CONFIG 里缺 BASE_CANVAS_H（高度基准）");
+
+  if (detail.length) return { ok: false, detail: detail.join("；") };
+
+  // 顺带算出五档画布的实际 fontScale，让「只有 4:3 该变」这件事在输出里可见
+  const baseW = Number(/\bBASE_CANVAS_W\s*=\s*(\d+)/.exec(src)[1]);
+  const baseH = Number(/\bBASE_CANVAS_H\s*=\s*(\d+)/.exec(src)[1]);
+  const canvases = [
+    ["pc-16-9", 1600, 900], ["pc-21-9", 2100, 900],
+    ["mobile-16-9", 1280, 720], ["mobile-19.5-9", 1560, 720], ["mobile-4-3", 1280, 960],
+  ];
+  const scaleInfo = canvases
+    .map(([id, w, h]) => {
+      const s = Math.min(w / baseW, h / baseH);
+      const old = h / baseH;
+      const flag = Math.abs(s - old) > 1e-9 ? "←修正" : "不变";
+      return `${id}: ${old.toFixed(3)}→${s.toFixed(3)}(${flag})`;
+    })
+    .join("，");
+  return { ok: true, detail: `fontScale = min(canvasW/${baseW}, canvasH/${baseH})｜${scaleInfo}` };
+}
+
+// ===========================================================================
 // CHECK-7 图元预算自洽：
 //   CONFIG.PIECE_PRIM_BUDGET ≥ 按 PIECE_ART 算出的单枚最大控件数
 //   投影删除后的算法：role0 × 2 + role1 × 2 + role2 × 1
@@ -1436,6 +1484,9 @@ function main() {
 
   const r7 = checkPrimBudget(src);
   record("CHECK-7", "图元预算自洽（PIECE_PRIM_BUDGET vs PIECE_ART）", r7.ok, r7.detail);
+
+  const r8 = checkFontScaleUsesBothAxes(src);
+  record("CHECK-8", "字号缩放同时看宽高（4:3 画布不截断文案）", r8.ok, r8.detail);
 
   const failed = results.filter((r) => !r.ok);
   console.log("");
