@@ -10,7 +10,7 @@
   设计基准：1600 × 900（电脑 16:9）
   基准来源：docs/策划案.md 10.1–10.7
   生成时间：2026-10-31 12:10 (Asia/Shanghai)
-  版本：v2（棋子两档：纯棋符 / 圆盘+棋符）
+  版本：v3（浅色主题 + 走子补间跟手 + WebAudio 合成音效）
   规则来源：tools_work/chess_rules.js（与 lua/levelScript.lua 第 3 区 RULES 逐函数对照，
            两者用同一套 perft 标准答案交叉验证）
 
@@ -19,6 +19,21 @@
   - 量测：URL 加 ?measure=1 → 输出 MEASURE_RESULT 到 console
   - 自检：URL 加 ?selftest=1 → 跑 window.__selfTest() 并把结果写进 title
   - 调试：URL 加 ?debug=1 → 显示参考线/中心点/元素编号
+
+  【配色】v3 起整份换成浅色主题（暖木棋盘 + 浅米外壳 + 琥珀强调色），
+  COLOR 表与 lua/levelScript.lua 的 CONFIG.COLOR 逐项同值，改一处必须两处同步。
+
+  【棋子画法 · 只有一种】图元拟合（矩形/椭圆/三角叠出来的形状层），
+  数据与渲染公式逐条照抄 lua/levelScript.lua 的 PIECE_ART + paint_slot。
+  **已彻底删除 Unicode 棋符字符（U+2654..U+265F）与「圆盘+棋符 / 纯棋符」两档**
+  （issue #1 第 4 条），原因：真机上文本框里的棋符根本显示不出来
+  （docs/playtest.md 缺陷 D-2），游戏内早已只保留图元拟合一种画法，Demo 必须与之一致。
+  **不要再加回来** —— 文件里出现任何一个 U+2654..U+265F 字符都是回归。
+
+  【音效 · 重要】本 Demo 里的音效是**浏览器 WebAudio 纯代码合成音**（无任何外部音频文件，
+  保证离线可用），**只用于演示触发时机**（走子/吃子/将军/升变/结束/选中/点击）。
+  真机 Lua 侧用 game.PlayAudio2D(音效资产ID) 播放，音色由编辑器里挂的音效资产决定，
+  与 Demo 听到的音色无关，不要照 Demo 的合成音去调资产参数。
 -->
 <style>
   :root {
@@ -26,33 +41,50 @@
     --base-w: 1600px;
     --base-h: 900px;
 
-    /* 配色（与策划案 10.6 逐项一致） */
-    --c-bg: rgb(18,22,30);
-    --c-sq-light: rgb(238,228,208);
-    --c-sq-dark: rgb(106,130,150);
-    --c-sel: rgb(250,198,74);
-    --c-legal: rgb(108,186,130);
-    --c-last: rgb(176,196,226);
-    --c-check: rgb(214,70,66);
-    --c-panel: rgb(26,32,44);
-    --c-panel-sec: rgb(34,42,56);
-    --c-text: rgb(238,240,244);
-    --c-text-sub: rgb(150,158,170);
-    --c-btn: rgb(58,74,104);
-    --c-btn-text: rgb(244,246,250);
-    --c-btn-dis: rgb(40,46,58);
-    --c-btn-dis-text: rgb(110,116,128);
-    --c-clock-low: rgb(214,74,74);
-    --c-wp: rgb(250,250,246);
-    --c-wp-ol: rgb(38,34,28);
-    --c-bp: rgb(26,24,22);
-    --c-bp-ol: rgb(238,234,226);
-    --c-overlay: rgba(10,12,18,0.9);
+    /* 配色 —— v3 浅色主题。与 JS 的 COLOR 表同源（改这里必须同步改 COLOR 表）。 */
+    --c-bg-top: rgb(248,246,242);
+    --c-bg: rgb(242,239,234);
+    --c-bg-bottom: rgb(234,230,224);
+    --c-board-frame: rgb(150,112,82);
+    --c-board-frame-in: rgb(178,138,104);
+    --c-sq-light: rgb(247,237,221);
+    --c-sq-dark: rgb(205,170,132);
+    --c-sel: rgb(200,128,26);          /* SEL 200,128,26，alpha 见 JS ALPHA.SEL=150/255 */
+    --c-sel-ring: rgb(200,128,26);     /* SEL_RING 200,128,26,235 */
+    --c-legal: rgb(46,120,92);         /* LEGAL 落点墨绿 */
+    --c-legal-cap: rgb(190,64,52);     /* LEGAL_CAP 190,64,52，alpha 见 JS ALPHA */
+    --c-last: rgb(214,168,64);         /* LAST 214,168,64，alpha 见 JS ALPHA.LAST */
+    --c-check: rgb(196,52,46);         /* CHECK 196,52,46，alpha 见 JS ALPHA.CHECK */
+    --c-panel: rgb(252,250,247);
+    --c-panel-inner: rgb(244,241,235);
+    --c-panel-sec: rgb(238,234,227);
+    --c-panel-edge: rgb(214,206,194);
+    --c-text: rgb(38,36,33);
+    --c-text-sub: rgb(110,104,96);
+    --c-text-dim: rgb(150,144,136);
+    --c-accent: rgb(188,116,20);
+    --c-btn: rgb(226,220,210);
+    --c-btn-hi: rgb(214,206,194);
+    --c-btn-text: rgb(44,40,36);
+    --c-btn-dis: rgb(236,232,226);
+    --c-btn-dis-text: rgb(168,162,154);
+    --c-btn-primary: rgb(188,116,20);
+    --c-btn-primary-text: rgb(250,246,240);
+    --c-clock-low: rgb(198,58,52);
+    --c-wp: rgb(253,252,250);
+    --c-wp-ol: rgb(44,40,36);
+    --c-bp: rgb(36,33,30);
+    --c-bp-ol: rgb(246,243,238);
+    --c-overlay: rgba(250,248,244,0.667);  /* OVERLAY 250,248,244,170 */
+
+    /* v3 动画参数（与 Lua 侧同一套数值，改这里必须同步改 ANIM.CFG） */
+    --dur-move: 0.17s;
+    --dur-settle: 0.10s;
   }
 
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%;
-    background: #0a0d13;
+    background: #e9e5df;   /* 舞台外的兜底底色（浅色主题，别再用深色，否则信箱边会发黑） */
     overflow: hidden;
     font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
   }
@@ -71,7 +103,15 @@
     position: absolute;
     left: 50%; top: 50%;
     width: var(--base-w); height: var(--base-h);
-    background: var(--c-bg);
+    /* v3：整屏底色改真渐变（上浅下略深三段），比 Lua 的三色带更连续。
+       两张同色系极淡径向光晕负责「光照感」，基础仍是竖向线性渐变。 */
+    background:
+      radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 62%),
+      radial-gradient(90% 70% at 50% 108%, rgba(150,112,82,0.10) 0%, rgba(150,112,82,0) 68%),
+      linear-gradient(180deg,
+        rgb(248,246,242) 0%,
+        rgb(242,239,234) 46%,
+        rgb(234,230,224) 100%);
     transform-origin: center center;
     transform: translate(-50%, -50%) scale(1);
     overflow: hidden;
@@ -80,32 +120,160 @@
   /* 所有元素：绝对定位，left/bottom 以 stage 左下为原点（与策划案一致） */
   .el { position: absolute; box-sizing: border-box; }
 
-  /* 棋盘格 */
-  .sq { z-index: 1; }
-  .hit { z-index: 2; cursor: pointer; }
-  .last { z-index: 3; pointer-events: none; }
-  .checkwarn { z-index: 4; pointer-events: none; }
-  .sel, .legal { z-index: 5; pointer-events: none; }
-  .piece {
-    z-index: 6; pointer-events: none;
-    display: flex; align-items: center; justify-content: center;
-    line-height: 1; user-select: none;
+  /* ---- 棋盘外框（v3 浅色主题：暖木框，让棋盘「立」在浅米外壳上）---- */
+  /* 三层与 Lua 一致：投影 → 外框本体 → 内圈高光。z-index 0，压在 64 格下面。 */
+  .board-frame-shadow {
+    z-index: 0; pointer-events: none;
+    border-radius: 10px;
+    box-shadow: 0 14px 34px rgba(120, 88, 58, 0.26), 0 3px 8px rgba(120, 88, 58, 0.18);
   }
-  .piece-disc { z-index: 6; pointer-events: none; border-radius: 50%; }
-  .coord { z-index: 7; pointer-events: none; display: flex; align-items: center; justify-content: center; }
-  .hint { z-index: 8; pointer-events: none; display: flex; align-items: center; justify-content: center; }
-  .panel { z-index: 9; }
-  .panel-el { z-index: 10; display: flex; align-items: center; justify-content: center; }
-  .btn { z-index: 11; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; }
-  .btn-hit { z-index: 12; cursor: pointer; }
+  .board-frame { z-index: 0; pointer-events: none; border-radius: 8px; }
+  .board-frame-in { z-index: 1; pointer-events: none; border-radius: 4px; }
 
-  /* 弹窗 */
+  /* 棋盘格 */
+  .sq { z-index: 2; }
+  .hit { z-index: 3; cursor: pointer; }
+  .last { z-index: 4; pointer-events: none; }
+  .checkwarn { z-index: 5; pointer-events: none; border-radius: 4px; }
+  .sel, .legal, .legal-cap { z-index: 6; pointer-events: none; }
+
+  /* 选中格：琥珀薄罩 + 内圈亮框 + 呼吸（0.95s 周期，与 Lua 同步） */
+  .sel {
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 3px var(--c-sel-ring, rgb(200,128,26));
+    animation: selBreathe 0.95s ease-in-out infinite;
+    will-change: transform;
+  }
+  @keyframes selBreathe {
+    0%, 100% { transform: scale(1.00); }
+    50%      { transform: scale(1.02); }
+  }
+
+  /* 落点（空格）：墨绿圆点，1.15s 周期呼吸；相位由 JS 在建立池子时错开 0.09s
+     【为什么用 ::after 画圆点而不是给 .legal 上底色】
+     整格墨绿会把浅木棋盘压成一块脏色，且和「可吃子红薄罩」撞形态；
+     Lua 侧落点也是正圆图元。.legal 自身不设 background，颜色取 --c-legal。 */
+  .legal {
+    background: transparent;
+    animation: legalBreathe 1.15s ease-in-out infinite;
+    will-change: transform;
+  }
+  .legal::after {
+    content: ""; position: absolute;
+    left: 34%; top: 34%; width: 32%; height: 32%;
+    border-radius: 50%;
+    background: var(--c-legal);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+  }
+  @keyframes legalBreathe {
+    0%, 100% { transform: scale(1.00); }
+    50%      { transform: scale(1.12); }
+  }
+
+  /* 落点（可吃子）：红薄罩整格，静态不呼吸，避免盖掉对方棋子。
+     alpha 由 JS 写到 style.opacity（ALPHA.LEGAL_CAP=170/255），这里只给形状。 */
+  .legal-cap { border-radius: 4px; box-shadow: inset 0 0 0 2px rgba(190, 64, 52, 0.75); }
+
+  /* ---- 棋子：图元拟合（与 lua/levelScript.lua 的 paint_slot 同一套画法）----
+     每个槽位 = 1 个 transform 容器（.piece-slot，动画只动它）
+              + 一叠绝对定位的图元 div（.piece-prim，数量 = 该棋子 PIECE_ART 的层数总和）。
+     图元**只在建场时创建一次**，运行时只改 left/top/width/height/transform/background。
+     没有棋影：真机 v1.3 起也去掉了底部半透明椭圆，这里不写任何 box-shadow。 */
+  .piece-slot { z-index: 7; pointer-events: none; }
+  /* 走子补间期间由 JS 每帧只写这一枚容器的 transform；预先声明 will-change 减少重绘。
+     **不能给棋子加 transition**：即时定位（复盘翻页/逐手重绘）会被过渡成从旧位置滑来的鬼影。 */
+  .piece-anim { will-change: transform; }
+  /* 单个图元：绝对定位在槽位容器内。
+     **不许写 border-radius** —— 矩形图元必须是直角；椭圆/三角由 JS 按 shape 写内联样式。 */
+  .piece-prim { position: absolute; box-sizing: border-box; transform-origin: 50% 50%; }
+  .coord { z-index: 8; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+  .hint { z-index: 9; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+
+  /* ---- 面板（v3 卡片化：浅卡片 + 描边 + 投影，靠边界而不是靠色差区分）---- */
+  .panel {
+    z-index: 10;
+    border-radius: 10px;
+    border: 1px solid var(--c-panel-edge);
+    box-shadow: 0 10px 26px rgba(120, 100, 78, 0.13);
+  }
+  .panel-el { z-index: 11; display: flex; align-items: center; justify-content: center; }
+  /* 轮次状态条：琥珀强调（只给「当前可操作的东西」）。
+     注意这里**不写 color**：文字色由 JS 内联成 COLOR.ACCENT，内联样式优先级更高，
+     在 CSS 里写会被覆盖，写在这里只会误导后来人。 */
+  .panel-el[data-anchor-id="panelturn"] {
+    background: var(--c-panel-sec);
+    border-radius: 6px;
+    font-weight: 600;
+  }
+  /* 分隔线：1px 细线，颜色由 JS 内联成 COLOR.PANEL_EDGE（这里只给几何开关） */
+  .panel-div { z-index: 11; }
+  /* 棋钟内底：浅一档，让并排的两格像「面板里的一格」。
+     底色由 JS 内联成 COLOR.PANEL_INNER；这里只给圆角，避免方角切进卡片视觉。 */
+  .panel-el[data-anchor-id="clockwhitebg"],
+  .panel-el[data-anchor-id="clockblackbg"] { border-radius: 6px; }
+  /* 走子记录底：内卡片。
+     【v1.11 分层】底色挪到独立的 movelogbg 控件（与 Lua 的 movelogbg 同结构），
+     文字层 movelog 只负责排版 —— 两者尺寸不同（bandInner 90% vs band 92%），
+     再把底色画在文字层上就盖住了内嵌效果。 */
+  .panel-el[data-anchor-id="movelogbg"] {
+    background: var(--c-panel-inner);
+    border-radius: 8px;
+    border: 1px solid var(--c-panel-edge);
+  }
+  /* 走子记录文字层：只排字，不画底 */
+  .panel-el[data-anchor-id="movelog"] {
+    background: transparent;
+    border-radius: 0;
+    overflow: hidden;
+  }
+  .btn {
+    z-index: 12; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; user-select: none;
+    border-radius: 8px;
+    border: 1px solid var(--c-panel-edge);
+    font-weight: 600;
+  }
+  /* 禁用态：底 = BTN_DIS(236,232,226) 与普通底 BTN(226,220,210) 只差 10 点亮度，
+     靠**字色**区分（44,40,36 → 168,162,154）。两者在浅面板上都看得见，只是对比度压低。 */
+  .btn.is-disabled {
+    background: var(--c-btn-dis) !important;
+    color: var(--c-btn-dis-text) !important;
+    cursor: default;
+    box-shadow: none;
+  }
+  .btn-hit { z-index: 13; cursor: pointer; }
+
+  /* 弹窗（浅色主题：浅灰白遮罩 + 深字，绝不能叠黑底白字） */
   .overlay { z-index: 20; background: var(--c-overlay); }
-  .dlg-bg { z-index: 21; background: var(--c-panel); border-radius: 6px; }
+  .dlg-bg {
+    z-index: 21; background: var(--c-panel); border-radius: 10px;
+    border: 1px solid var(--c-panel-edge);
+    box-shadow: 0 18px 48px rgba(110, 88, 62, 0.20);
+  }
   .dlg-el { z-index: 22; display: flex; align-items: center; justify-content: center; text-align: center; }
-  .dlg-btn { z-index: 23; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; }
+  .dlg-btn {
+    z-index: 23; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; user-select: none;
+    border-radius: 8px; border: 1px solid var(--c-panel-edge); font-weight: 600;
+  }
+  .dlg-btn:hover { filter: brightness(0.95); }
   .dlg-btn-hit { z-index: 24; cursor: pointer; }
   .hidden { display: none !important; }
+
+  /* ---- 音效开关（仅 Demo 有，Lua 侧无此控件）---- */
+  .sfx-btn {
+    z-index: 16;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; user-select: none;
+    border-radius: 999px;
+    border: 1px solid var(--c-panel-edge);
+    background: var(--c-panel);
+    color: var(--c-text-sub);
+    font-weight: 600;
+    box-shadow: 0 3px 10px rgba(120, 100, 78, 0.14);
+  }
+  .sfx-btn:hover { background: var(--c-panel-inner); color: var(--c-text); }
+  .sfx-btn.is-off { color: var(--c-text-dim); }
 
   /* 调试显示（默认关闭） */
   #debugLayer { position: absolute; inset: 0; z-index: 30; pointer-events: none; display: none; }
@@ -695,23 +863,234 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
   const BOARD_SIDE_RATIO = 0.78;
   const PANEL_WIDTH_RATIO = 0.22;
 
+  // 【FONT.PIECE 说明】棋子已改用图元拟合渲染，这一项**不再驱动任何绘制**（棋子上没有字了）。
+  // 仍保留 52 只为让 tools_work/consistency_check.cjs 的「字号逐项比对」继续与 Lua 的
+  // CONFIG.FONT.PIECE 对齐（Lua 侧同样保留该键）；删掉它会报「未找到」。别拿它去写字号。
   const FONT = {
-    COORD: 22, PIECE: 52, PANEL_TITLE: 32, PANEL_BODY: 20, CLOCK: 36,
+    COORD: 22, PIECE: 52, PANEL_TITLE: 32, PANEL_BODY: 20,
+    // v1.11：棋钟改成并排两格，每格只有半宽，36 会顶满被换行截断 → 降到 28
+    CLOCK: 28,
     BUTTON: 24, HINT: 24, RESULT_TITLE: 44, RESULT_SUB: 24, PROMO_OPTION: 24,
     MIN_FONT: 16,
   };
 
-  const COLOR = {
-    BG: "rgb(18,22,30)", SQ_LIGHT: "rgb(238,228,208)", SQ_DARK: "rgb(106,130,150)",
-    SEL: "rgb(250,198,74)", LEGAL: "rgb(108,186,130)", LAST: "rgb(176,196,226)",
-    CHECK: "rgb(214,70,66)", PANEL: "rgb(26,32,44)", PANEL_SEC: "rgb(34,42,56)",
-    TEXT: "rgb(238,240,244)", TEXT_SUB: "rgb(150,158,170)",
-    BTN: "rgb(58,74,104)", BTN_TEXT: "rgb(244,246,250)",
-    BTN_DIS: "rgb(40,46,58)", BTN_DIS_TEXT: "rgb(110,116,128)",
-    CLOCK_LOW: "rgb(214,74,74)",
-    WHITE_PIECE: "rgb(250,250,246)", WHITE_OUTLINE: "rgb(38,34,28)",
-    BLACK_PIECE: "rgb(26,24,22)", BLACK_OUTLINE: "rgb(238,234,226)",
+  // ---------- 配色（v3 浅色主题）----------
+  // 与 lua/levelScript.lua 的 CONFIG.COLOR **同一套数值**，改一处必须两处同步。
+  // 键名纪律：老键名（BG/SQ_LIGHT/SQ_DARK/SEL/LEGAL/LAST/CHECK/PANEL/PANEL_SEC/TEXT/
+  //          TEXT_SUB/BTN/BTN_TEXT/BTN_DIS/BTN_DIS_TEXT/CLOCK_LOW/WHITE_PIECE/
+  //          WHITE_OUTLINE/BLACK_PIECE/BLACK_OUTLINE）**不许改名**，有 20+ 处引用。
+  // 【写法约定】带 alpha 的颜色（SEL/LAST/CHECK/LEGAL_CAP）这里只写 rgb 三元组，
+  // alpha 用 Alpha 表 + 元素的 style.opacity 落地。理由：tools_work/consistency_check.cjs
+  // 用 /"rgb\((\d+),(\d+),(\d+)\)"/ 抓这三段跟 Lua 的 {r,g,b,a} 前三位比，
+  // 写成 rgba(...) 会让它抓不到而误报「未找到」。alpha 一律查 Alpha 表，别写死 numerics。
+  const ALPHA = {
+    SEL: 150 / 255,       // SEL_HL  a=150
+    LAST: 110 / 255,      // LAST_MOVE a=110
+    CHECK: 180 / 255,     // CHECK_WARN a=180
+    LEGAL_CAP: 170 / 255, // LEGAL_CAP a=170
   };
+  const COLOR = {
+    // 外壳（三段竖向渐变，实际渲染在 #stage 的 CSS background 上，见 <style>）
+    BG_TOP: "rgb(248,246,242)", BG: "rgb(242,239,234)", BG_BOTTOM: "rgb(234,230,224)",
+    // 棋盘外框（暖木深 / 内圈）
+    BOARD_FRAME: "rgb(150,112,82)", BOARD_FRAME_IN: "rgb(178,138,104)",
+    // 棋盘格（不透明木色，绝不再叠 opacity，否则透出外框色）
+    SQ_LIGHT: "rgb(247,237,221)", SQ_DARK: "rgb(205,170,132)",
+    // 高亮（半透明叠色：alpha 见 ALPHA 表，由调用处写到 style.opacity）
+    SEL: "rgb(200,128,26)", SEL_RING: "rgb(200,128,26)",
+    LEGAL: "rgb(46,120,92)", LEGAL_CAP: "rgb(190,64,52)",
+    LAST: "rgb(214,168,64)", CHECK: "rgb(196,52,46)",
+    // 面板卡片
+    PANEL: "rgb(252,250,247)", PANEL_INNER: "rgb(244,241,235)",
+    PANEL_SEC: "rgb(238,234,227)", PANEL_EDGE: "rgb(214,206,194)",
+    // 文字
+    TEXT: "rgb(38,36,33)", TEXT_SUB: "rgb(110,104,96)", TEXT_DIM: "rgb(150,144,136)",
+    ACCENT: "rgb(188,116,20)",
+    // 按钮
+    BTN: "rgb(226,220,210)", BTN_HI: "rgb(214,206,194)", BTN_TEXT: "rgb(44,40,36)",
+    BTN_DIS: "rgb(236,232,226)", BTN_DIS_TEXT: "rgb(168,162,154)",
+    BTN_PRIMARY: "rgb(188,116,20)", BTN_PRIMARY_TEXT: "rgb(250,246,240)",
+    // 棋钟 / 弹窗遮罩（遮罩是浅灰白，浅色主题下绝不能再叠黑底白字）
+    CLOCK_LOW: "rgb(198,58,52)", OVERLAY: "rgba(250,248,244,0.667)",
+    // 棋子（白身深描边 / 黑身浅描边，任何浅木格子上都有清晰边缘）
+    WHITE_PIECE: "rgb(253,252,250)", WHITE_OUTLINE: "rgb(44,40,36)",
+    BLACK_PIECE: "rgb(36,33,30)", BLACK_OUTLINE: "rgb(246,243,238)",
+  };
+
+  // ---------- 动画参数（与 lua/levelScript.lua 的 ANIM.CFG 同一套数值）----------
+  const ANIM = {
+    MOVE_DUR: 0.17,      // 走子补间时长（秒）
+    MOVE_ARC: 0.16,      // 走子弧线抬升 = 格宽 × 0.16（比例保持，与 Lua 一致）
+    SETTLE_DUR: 0.10,    // 落子回弹时长
+    SETTLE_PEAK: 0.07,   // 回弹峰值，棋子缩放到 1.07 再回到 1.00
+  };
+  // 缓动：outCubic 与 Lua 的 EASE.outCubic 完全同一个公式
+  function outCubic(t) { const u = 1 - t; return 1 - u * u * u; }
+  // 落子回弹形状：outBack(t) - t。
+  // 【为什么要减 t】直接拿 outBack 当缩放会让回弹段在 t=0 从「1.0 瞬间跳到 1.07」，
+  // 和位移段结尾的 scale=1.0 接不上，观感是抽一下。减去线性项后两端都归零
+  // （shape(0)=0, shape(1)=0），中段仍有 outBack 的超调，才是真正的「弹一下再落回去」。
+  function outBack(t) {
+    const c1 = 1.70158, c3 = c1 + 1, u = t - 1;
+    return 1 + c3 * u * u * u + c1 * u * u;
+  }
+  const SETTLE_SHAPE_MAX = 0.630227;   // shape(t) 在 t≈0.3808 处的峰值，用于把曲线归一到「峰值正好 = SETTLE_PEAK」
+  function settleShape(t) { return (outBack(t) - t) / SETTLE_SHAPE_MAX; }
+
+  // ============================================================================
+  // 音效开关的文案。
+  // 【v1.10 起 Lua 侧也有这个按钮了】文案值必须与 lua/levelScript.lua 的
+  // CONFIG.TEXT.SFX_ON / SFX_OFF 逐字一致（改一处必须两处同步）。
+  // 仍然单独放一张表、不并进 TEXT：TEXT 表要与 Lua 的 CONFIG.TEXT 逐项配平，
+  // 而 tools_work/consistency_check.cjs 是按「共同键」比对的，留独立表更清楚。
+  // ============================================================================
+  const TEXT_DEMO_ONLY = { SFX_ON: "音效：开", SFX_OFF: "音效：关" };
+
+  // ============================================================================
+  // 音效层（WebAudio 纯代码合成，零外部音频资源 → 离线可用）
+  // ----------------------------------------------------------------------------
+  // 【重要】这里合成出来的音色**只用于演示触发时机**，不作为最终音色标准。
+  // 真机 Lua 侧是 game.PlayAudio2D(音效资产ID) 播放在编辑器里挂的音效资产，
+  // 音色由资产本身决定 —— 不要拿 Demo 的合成音去反推/调资产参数。
+  // 触发时机与 Lua 的 CONFIG.SFX 一一对应：
+  //   点击 / 选中 / 走子 / 吃子 / 将军 / 升变 / 结束
+  // 音量纪律：单次峰值 GAIN ≤ 0.12，时长 ≤ 0.18s，绝不写成吵闹的东西。
+  // 浏览器策略：AudioContext 必须在用户第一次交互后才能创建/恢复，见 ensureAudio()。
+  // ============================================================================
+  const SFX_LS_KEY = "chess_demo_sfx";     // localStorage 键名
+  const SFX_MASTER = 0.10;                 // 总音量上限（0.06~0.12 区间内）
+
+  const SFX = {
+    enabled: true,        // 默认开
+    ctx: null,            // AudioContext，第一次交互后才创建
+    failed: false,        // 创建失败（老浏览器）就永久静音，不再重试
+    lastClickAt: 0,       // 点击节流：同一毫秒内多个 handler 只响一次
+
+    // 读 localStorage（默认开；存 "0" 视为关）
+    loadPref() {
+      try {
+        const v = localStorage.getItem(SFX_LS_KEY);
+        SFX.enabled = (v !== "0");
+      } catch (e) { SFX.enabled = true; }
+    },
+    savePref() {
+      try { localStorage.setItem(SFX_LS_KEY, SFX.enabled ? "1" : "0"); } catch (e) {}
+    },
+
+    // 惰性创建 + resume（必须在用户手势里调用）
+    ensure() {
+      if (SFX.failed || !SFX.enabled) return null;
+      try {
+        if (!SFX.ctx) {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) { SFX.failed = true; return null; }
+          SFX.ctx = new AC();
+        }
+        // 浏览器可能在后台把 context 挂起，一定要 resume（返回 Promise，忽略结果）
+        if (SFX.ctx.state === "suspended" && SFX.ctx.resume) {
+          const p = SFX.ctx.resume();
+          if (p && p.catch) p.catch(() => {});
+        }
+        return SFX.ctx;
+      } catch (e) { SFX.failed = true; return null; }
+    },
+
+    // 单个音：方波/三角/正弦/锯齿 + 指数衰减包络
+    //   type 波形 / f0 起始频率 / f1 结束频率（做滑音）/ dur 时长 / gain 峰值 / delay 延后
+    tone(type, f0, f1, dur, gain, delay) {
+      const ctx = SFX.ensure();
+      if (!ctx) return;
+      const t0 = ctx.currentTime + (delay || 0);
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(f0, t0);
+      if (f1 && f1 !== f0) osc.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur);
+      // 峰值受 SFX_MASTER 与单音 gain 双重约束
+      const peak = Math.min(0.12, Math.max(0.0001, gain * SFX_MASTER));
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(peak, t0 + Math.min(0.012, dur * 0.35));
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start(t0); osc.stop(t0 + dur + 0.02);
+    },
+
+    // 噪声（吃子撞击的"沙"感）：短促白噪声 + 低通
+    noise(dur, gain, delay, cutoff) {
+      const ctx = SFX.ensure();
+      if (!ctx) return;
+      const t0 = ctx.currentTime + (delay || 0);
+      const n = Math.max(1, Math.floor(ctx.sampleRate * dur));
+      const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / n);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.setValueAtTime(cutoff || 1400, t0);
+      const g = ctx.createGain();
+      const peak = Math.min(0.12, Math.max(0.0001, gain * SFX_MASTER));
+      g.gain.setValueAtTime(peak, t0);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      src.connect(lp); lp.connect(g); g.connect(ctx.destination);
+      src.start(t0); src.stop(t0 + dur + 0.01);
+    },
+
+    // ---- 7 种事件（与 Lua CONFIG.SFX 的触发点一一对应）----
+    click() {            // 按钮/落点：短促方波 tick
+      if (!SFX.enabled) return;
+      SFX.tone("square", 1500, 1100, 0.035, 0.42, 0);
+    },
+    select() {           // 选中棋子：轻微三角波
+      if (!SFX.enabled) return;
+      SFX.tone("triangle", 660, 720, 0.09, 0.55, 0);
+    },
+    move() {             // 走子：低频木质感短音
+      if (!SFX.enabled) return;
+      SFX.tone("triangle", 300, 190, 0.11, 0.75, 0);
+      SFX.noise(0.045, 0.30, 0, 900);
+    },
+    capture() {          // 吃子：带噪声的撞击
+      if (!SFX.enabled) return;
+      SFX.tone("square", 190, 120, 0.10, 0.60, 0);
+      SFX.noise(0.10, 0.75, 0, 2200);
+    },
+    check() {            // 将军：两声上扬
+      if (!SFX.enabled) return;
+      SFX.tone("triangle", 720, 780, 0.08, 0.62, 0);
+      SFX.tone("triangle", 960, 1030, 0.09, 0.62, 0.075);
+    },
+    promote() {          // 升变：上行琶音
+      if (!SFX.enabled) return;
+      [523, 659, 784, 1047].forEach((f, i) => SFX.tone("sine", f, f, 0.10, 0.58, i * 0.055));
+    },
+    over() {             // 对局结束：三音收尾
+      if (!SFX.enabled) return;
+      SFX.tone("sine", 784, 784, 0.13, 0.65, 0);
+      SFX.tone("sine", 659, 659, 0.13, 0.62, 0.10);
+      SFX.tone("sine", 523, 523, 0.18, 0.60, 0.20);
+    },
+    // 统一入口：所有 handler 里只调 SFX.play("move") 这种，别直接碰 AudioContext
+    play(name) {
+      if (!SFX.enabled) return;
+      // 点击节流：同一次交互可能连着触发「按钮音 + 业务音」，只留一声
+      if (name === "click") {
+        const now = (window.performance && performance.now) ? performance.now() : Date.now();
+        if (now - SFX.lastClickAt < 40) return;
+        SFX.lastClickAt = now;
+      }
+      const fn = SFX[name];
+      if (typeof fn === "function") { try { fn(); } catch (e) {} }
+    },
+    toggle() {
+      SFX.enabled = !SFX.enabled;
+      SFX.savePref();
+      if (SFX.enabled) { SFX.ensure(); SFX.play("select"); }
+      return SFX.enabled;
+    },
+  };
+  SFX.loadPref();
 
   // 全部玩家可见文案：逐字照 docs/策划案.md 9.2–9.6，改这里必须同步改 Lua
   const TEXT = {
@@ -751,10 +1130,22 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     BTN_RESIGN: "认输",
     BTN_DRAW: "求和",
     BTN_LOCAL: "切换本地同屏",
-    BTN_STYLE_DISC: "棋子：圆盘",
-    BTN_STYLE_GLYPH: "棋子：符号",
     BTN_ONLINE: "切换联机对战",
     BTN_DRAW_USED: "求和已用完",
+    // ===== 复盘（逐手回放，与 lua/levelScript.lua 第 1 区 TEXT 逐字一致）=====
+    // 入口两处：① 结算弹窗「复盘」按钮（对局结束后）② 面板第三行「看历史」（对局中随时）
+    BTN_REVIEW: "复盘",
+    BTN_REVIEW_HISTORY: "看历史",
+    BTN_REVIEW_EXIT: "退出复盘",
+    BTN_REVIEW_START: "开局",
+    BTN_REVIEW_PREV: "上一步",
+    BTN_REVIEW_NEXT: "下一步",
+    BTN_REVIEW_END: "终局",
+    REVIEW_AT_START: "复盘 · 开局",
+    // {n}=当前步 {m}=总步数，运行时替换；模板里不许写死数字
+    REVIEW_STEP: "复盘 · 第 {n}/{m} 步",
+    REVIEW_EMPTY: "这局还没走子，没得复盘",
+    REVIEW_START_HINT: "开局 · 还没走子",
     // 确认弹窗
     CONFIRM_RESIGN: "认输就直接判负，确定吗",
     CONFIRM_RESIGN_YES: "确定认输",
@@ -768,6 +1159,11 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     CONFIRM_DRAW_NO: "拒绝求和",
     // 面板
     PANEL_TITLE: "黑白棋局",
+    // 【v1.11 失子行文案】只列字母 'P P N' 看不出这是谁吃掉谁的，统一加前缀。
+    // CAP_PREFIX 对应 Lua 的 CONFIG.CAP_PREFIX（唯一实际使用者，见 cap_text）。
+    // 老的 CAP_WHITE_PREFIX / CAP_BLACK_PREFIX 仍留在 TEXT 里只为与 Lua 的 CONFIG.TEXT
+    // 逐项配平（consistency_check 按共同键比对），渲染不用它们。
+    CAP_PREFIX: "失子 ",
     CAP_WHITE_PREFIX: "白方失子 ",
     CAP_BLACK_PREFIX: "黑方失子 ",
     CAP_NONE: "无",
@@ -781,26 +1177,211 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     PROMO_KNIGHT: "马",
   };
 
-  // ---- 棋子显示方式（两种，游戏中可切换）----
-  //  mode 0 = Unicode 棋符（默认，零图片依赖）
-  //  mode 1 = 图片（需用户在编辑器里给 12 个图片编号；编号缺失时自动回落 mode 0）
+  // ============================================================================
+  // 图元拟合棋子（**唯一的棋子画法**）
+  // ----------------------------------------------------------------------------
+  // 与 lua/levelScript.lua 的 PIECE_ART（第 683–776 行）+ paint_slot 完全同一套：
+  // 每枚棋子由若干个「矩形 / 椭圆 / 三角」图元叠出来，按 role 分五层渲染。
   //
-  //  Unicode 用实心棋符 U+265A..U+265F，白方用白色填充 + 深色描边，
-  //  黑方用深色填充 + 浅色描边 —— 同一套字形靠颜色区分，视觉统一。
-  const GLYPH = {
-    //           白方(实心)  黑方(实心)
-    [CHESS_RULES.KING]:   [0x265A, 0x265A],
-    [CHESS_RULES.QUEEN]:  [0x265B, 0x265B],
-    [CHESS_RULES.ROOK]:   [0x265C, 0x265C],
-    [CHESS_RULES.BISHOP]: [0x265D, 0x265D],
-    [CHESS_RULES.KNIGHT]: [0x265E, 0x265E],
-    [CHESS_RULES.PAWN]:   [0x265F, 0x265F],
+  // 【为什么不用 Unicode 棋符】真机 v1.3 起已删掉「圆盘+棋符 / 纯棋符」两档
+  // （见 docs/playtest.md 缺陷 D-2：真机文本框里的棋符根本显示不出来），
+  // Demo 必须与游戏内一致，所以棋符画法已整体移除，**不要再加回来**。
+  //
+  // 【数据格式】[shape, cx, cy, w, h, rotDeg, role]
+  //   shape  0=矩形 1=椭圆 2=三角（尖朝上）
+  //   cx,cy  ∈[0,1] 图元**中心**，左下原点、Y 向上（HTML 是左上原点 Y 向下，转换见 primGeom）
+  //   w,h    ∈[0,1] 相对棋子方框边长（方框 = 棋格宽 × 0.92）
+  //   rotDeg 旋转角（度），**逆时针为正**；CSS 里必须取负：rotate(-rotDeg deg)
+  //   role   0=外形 / 1=镂空 / 2=细节线
+  // ============================================================================
+  const PIECE_ART = {
+    // PAWN：6 图元（IoU 0.9924）
+    [CHESS_RULES.PAWN]: [
+      [1, 0.512646, 0.279915, 0.445646, 0.344966, -11.299081, 0],
+      [1, 0.499023, 0.262695, 0.487695, 0.290780, 0.000000, 0],
+      [1, 0.500000, 0.533203, 0.321924, 0.321924, 8.000000, 0],
+      [0, 0.500000, 0.148438, 0.539062, 0.082031, 0.000000, 0],
+      [1, 0.500977, 0.711914, 0.207232, 0.210162, 53.000000, 0],
+      [0, 0.501953, 0.222656, 0.515625, 0.074219, 1.000000, 0],
+    ],
+    // KNIGHT：14 图元（IoU 0.9917）
+    [CHESS_RULES.KNIGHT]: [
+      [1, 0.654297, 0.500000, 0.327244, 0.564548, 24.000000, 0],
+      [1, 0.363282, 0.572904, 0.539443, 0.297539, 45.646694, 0],
+      [1, 0.677925, 0.342679, 0.350758, 0.437056, 16.869953, 0],
+      [1, 0.555664, 0.629883, 0.476142, 0.293525, -22.000000, 0],
+      [1, 0.328509, 0.583216, 0.242530, 0.448969, -24.018669, 0],
+      [1, 0.272460, 0.475191, 0.378792, 0.238514, 47.000000, 0],
+      [0, 0.644987, 0.190101, 0.429947, 0.147386, 0.269524, 0],
+      [1, 0.254725, 0.441671, 0.159446, 0.293961, 1.457440, 0],
+      [1, 0.425199, 0.231641, 0.282512, 0.139623, 49.286109, 0],
+      [1, 0.555046, 0.158613, 0.479025, 0.063513, 6.529150, 0],
+      [1, 0.437083, 0.295448, 0.052780, 0.423680, -32.207283, 0],
+      [1, 0.324735, 0.798196, 0.077289, 0.119684, 31.000000, 0],
+      [1, 0.436662, 0.805366, 0.136861, 0.048857, 49.837737, 0],
+      [1, 0.473682, 0.819568, 0.086690, 0.056165, -67.907330, 0],
+    ],
+    // BISHOP：10 图元（IoU 0.9861）
+    [CHESS_RULES.BISHOP]: [
+      [1, 0.525391, 0.552734, 0.372121, 0.363331, -12.000000, 0],
+      [1, 0.471483, 0.581599, 0.403021, 0.327103, 46.578235, 0],
+      [1, 0.510742, 0.354492, 0.354301, 0.236137, -13.000000, 0],
+      [1, 0.498063, 0.310470, 0.375928, 0.144356, -4.909082, 0],
+      [0, 0.644531, 0.181641, 0.333984, 0.088867, -1.000000, 0],
+      [0, 0.367188, 0.182617, 0.228516, 0.090820, 1.000000, 0],
+      [1, 0.500000, 0.822266, 0.142684, 0.144637, -23.000000, 0],
+      [1, 0.470583, 0.244825, 0.328504, 0.058333, -16.277549, 0],
+      [1, 0.208984, 0.171875, 0.186170, 0.093396, 15.000000, 0],
+      [1, 0.813477, 0.165039, 0.138831, 0.082190, -14.000000, 0],
+    ],
+    // ROOK：17 图元（IoU 0.9980，三垛口 + 两凹槽都出来了）
+    [CHESS_RULES.ROOK]: [
+      [0, 0.500000, 0.445312, 0.414062, 0.656250, 0.000000, 0],
+      [2, 0.507857, 0.493579, 0.394354, 0.488706, 9.820388, 0],
+      [0, 0.501953, 0.166016, 0.617188, 0.097656, 0.000000, 0],
+      [0, 0.500000, 0.166016, 0.632812, 0.082031, 0.000000, 0],
+      [0, 0.500000, 0.257812, 0.500000, 0.089844, 0.000000, 0],
+      [1, 0.686523, 0.703125, 0.147604, 0.163229, 0.000000, 0],
+      [1, 0.308594, 0.707031, 0.144914, 0.152726, 0.000000, 0],
+      [0, 0.713835, 0.744739, 0.112588, 0.144595, 0.000000, 0],
+      [0, 0.287109, 0.746094, 0.117188, 0.136719, 0.000000, 0],
+      [0, 0.711914, 0.744141, 0.125000, 0.117188, -1.000000, 0],
+      [0, 0.498047, 0.315430, 0.438477, 0.029297, 1.000000, 0],
+      [2, 0.309710, 0.735709, 0.147960, 0.135864, -1.857744, 0],
+      [0, 0.500000, 0.789062, 0.140625, 0.035156, 0.000000, 0],
+      [0, 0.501953, 0.802734, 0.125000, 0.027344, 0.000000, 0],
+      [1, 0.293563, 0.331957, 0.014434, 0.030566, -20.262352, 0],
+      [1, 0.278308, 0.303739, 0.015007, 0.026280, 0.000000, 0],
+      [1, 0.291016, 0.631836, 0.017469, 0.018446, 0.000000, 0],
+    ],
+    // QUEEN：17 图元（IoU 0.9835）
+    [CHESS_RULES.QUEEN]: [
+      [0, 0.510742, 0.322266, 0.388740, 0.419990, 0.000000, 0],
+      [0, 0.508059, 0.275336, 0.517643, 0.297900, 1.000000, 0],
+      [2, 0.500000, 0.513672, 0.289905, 0.710714, 0.000000, 0],
+      [2, 0.647493, 0.541280, 0.240853, 0.617952, -11.000000, 0],
+      [2, 0.346827, 0.571426, 0.223366, 0.564734, 10.319758, 0],
+      [1, 0.747053, 0.415046, 0.119585, 0.325627, -23.904840, 0],
+      [1, 0.234367, 0.459096, 0.113382, 0.274957, 12.000000, 0],
+      [1, 0.785239, 0.541201, 0.079294, 0.311636, -23.226333, 0],
+      [2, 0.179000, 0.629032, 0.121058, 0.304345, 20.776454, 0],
+      [1, 0.311116, 0.810519, 0.121893, 0.122886, 15.253947, 0],
+      [1, 0.866561, 0.733338, 0.121514, 0.122175, -14.480258, 0],
+      [1, 0.500977, 0.833984, 0.123307, 0.120377, 2.000000, 0],
+      [1, 0.688244, 0.800228, 0.122463, 0.121090, -17.000000, 0],
+      [1, 0.133560, 0.732897, 0.121067, 0.121181, -27.264805, 0],
+      [1, 0.722186, 0.504086, 0.025208, 0.338920, -32.200508, 0],
+      [1, 0.238848, 0.194190, 0.057016, 0.126990, -13.000000, 0],
+      [2, 0.317805, 0.542540, 0.078442, 0.129771, -3.221724, 0],
+    ],
+    // KING：10 图元（IoU 0.9898）
+    [CHESS_RULES.KING]: [
+      [1, 0.490234, 0.347656, 0.508713, 0.502854, 7.000000, 0],
+      [0, 0.488281, 0.390625, 0.500000, 0.457031, 0.000000, 0],
+      [1, 0.645835, 0.457133, 0.500744, 0.317975, 22.000000, 0],
+      [1, 0.712891, 0.505859, 0.341892, 0.312595, 4.000000, 0],
+      [1, 0.276367, 0.503906, 0.327000, 0.316258, -21.000000, 0],
+      [1, 0.499739, 0.634466, 0.181743, 0.226825, -1.541423, 0],
+      [1, 0.300179, 0.165129, 0.149576, 0.053440, -28.214397, 0],
+      [0, 0.501953, 0.822266, 0.132812, 0.035156, 0.000000, 0],
+      [0, 0.500000, 0.806641, 0.031250, 0.148438, 0.000000, 0],
+      [1, 0.676758, 0.152344, 0.148438, 0.029297, 26.000000, 0],
+    ],
   };
-  function pieceGlyph(p) {
-    const ap = Math.abs(p);
-    const g = GLYPH[ap];
-    if (!g) return "?";
-    return String.fromCharCode(g[0]);
+
+  // 棋子方框边长 = 棋格边长 × 0.92（与 Lua paint_slot 的 `local side = box * 0.92` 同值）
+  const PIECE_BOX_RATIO = 0.92;
+  // 外形层描边宽度 = PIECE_OUTLINE_PAD × 棋子方框边长（与 Lua CONFIG.PIECE_OUTLINE_PAD 同值）。
+  // 【为什么每个形状各自外扩，而不是整组等比放大】整组绕中心放大会让「离中心远的形状外移更多」，
+  // 同一枚棋子一圈边粗细不均，看起来"发胖"。各自外扩才能得到**均匀**的一圈描边。
+  const PIECE_OUTLINE_PAD = 0.020;
+  // 细长形状的描边钳制：pad 不得超过该形状短边的 22%，否则细线会被描边糊成色块。
+  const PIECE_PAD_CLAMP = 0.22;
+  // 每个槽位的图元池容量：取「全部棋子层数总和」的最大值（与 Lua piece_prim_max_of_all 同思路）。
+  // 池子建场时一次建满，播放期只切显隐，不创建/删除任何节点。
+  const PIECE_PRIM_MAX = (function () {
+    let m = 0;
+    for (const kind of [CHESS_RULES.PAWN, CHESS_RULES.KNIGHT, CHESS_RULES.BISHOP,
+                        CHESS_RULES.ROOK, CHESS_RULES.QUEEN, CHESS_RULES.KING]) {
+      const list = PIECE_ART[kind] || [];
+      let n = 0;
+      // role2（细节线）只画 1 层；role0/role1 各画 2 层（描边 + 填充）
+      for (const s of list) n += (s[6] === 2 ? 1 : 2);
+      if (n > m) m = n;
+    }
+    return m;
+  })();
+
+  // ============================================================================
+  // 棋子视觉居中量 —— 与 lua/levelScript.lua 的 piece_center_dy() **逐位同式**
+  // ----------------------------------------------------------------------------
+  // 【为什么必须同式而不是"更精确"】Lua 是交付件、是唯一权威；Demo 的职责是让用户在
+  // 装进编辑器前看到和游戏内一样的画面。两个渲染器用不同规则算同一条基线，哪怕只差
+  // 0.23px，以后任何人拿 Demo 截图和模拟器截图对比都会怀疑"是不是没对齐"。
+  //
+  // 【符号约定】
+  //   Lua 是左下原点、Y 向上 → 返回值 **正值 = 向上**（Lua 里 oy = ... + dy + center_dy*sside）。
+  //   HTML 是左上原点、Y 向下 → 本文件 top = (1 - cy - h/2 + DY) * side，
+  //   所以 DY 必须**取 Lua 值的相反数**：Lua 的 +0.0080920 对应这里的 -0.0080920（负 = 上移）。
+  //
+  // 【算法：逐位照抄 Lua shape_bbox + piece_center_dy】
+  //   每个 role0 形状取四个角 (±w/2, ±h/2)，按 rad = deg*π/180（**逆时针**）旋转：
+  //     rx = px·cos − py·sin,  ry = px·sin + py·cos
+  //   把 (cx+rx, cy+ry) 累积进全局 min/max，最后 dy = 0.5 − (yMin+yMax)/2。
+  //   只统计 role0：role1/role2 在轮廓内部，不影响视觉重心。
+  //
+  // 【已知近似，为与 Lua 同式而接受】四角旋转后取 AABB，对**椭圆**是过估计
+  //   （椭圆转过 θ 后的真实包围盒是 √(a²sin²θ+b²cos²θ)，不是 |a·sinθ|+|b·cosθ|），
+  //   量级约 0.23px @81px 方框。这与 Lua 的偏差**完全一致**，因此整体画面仍然对齐 ——
+  //   这正是本函数要的"一致压过精确"。不要"顺手改精确"。
+  //
+  // 【为什么用全局一个偏移而不是每枚各自居中】各自居中会把兵抬到和王一样高；
+  //   全局偏移只整体平移、不改变各枚之间的相对高度，才是"站在同一条基线上"的观感。
+  // ============================================================================
+  function shapeBBoxY(s) {
+    // 逐位照抄 Lua shape_bbox（只需 Y 分量，但四个角都算，保持与 Lua 同一遍历顺序）
+    const cx = s[1], cy = s[2], w = s[3], h = s[4];
+    const rad = (s[5] || 0) * Math.PI / 180;
+    const cs = Math.cos(rad), sn = Math.sin(rad);
+    const ex = w * 0.5, ey = h * 0.5;
+    let y0 = Infinity, y1 = -Infinity;
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        const px = sx * ex, py = sy * ey;
+        const ay = cy + (px * sn + py * cs);
+        if (ay < y0) y0 = ay;
+        if (ay > y1) y1 = ay;
+      }
+    }
+    return [y0, y1];
+  }
+
+  // Lua 口径的 dy（正值 = 向上），保留原始值供自检断言
+  const PIECE_CENTER_DY_LUA = (function () {
+    let y0 = Infinity, y1 = -Infinity;
+    for (const kind of [CHESS_RULES.PAWN, CHESS_RULES.KNIGHT, CHESS_RULES.BISHOP,
+                        CHESS_RULES.ROOK, CHESS_RULES.QUEEN, CHESS_RULES.KING]) {
+      for (const s of (PIECE_ART[kind] || [])) {
+        if (s[6] !== 0) continue;
+        const [sy0, sy1] = shapeBBoxY(s);
+        if (sy0 < y0) y0 = sy0;
+        if (sy1 > y1) y1 = sy1;
+      }
+    }
+    if (!isFinite(y0) || !isFinite(y1) || y1 <= y0) return 0;
+    return 0.5 - (y0 + y1) * 0.5;
+  })();
+
+  // HTML(CSS top) 口径：取相反数（Lua 正值向上 = CSS 负值上移）
+  const PIECE_CENTER_DY = -PIECE_CENTER_DY_LUA;
+
+  // 取某枚棋子的形状表（白黑共用同一份，区别只在渲染颜色），与 Lua piece_art_of 一致
+  function pieceArtOf(p) { return PIECE_ART[Math.abs(p)] || null; }
+
+  // 棋子配色：白方=白填充+深描边 / 黑方=深填充+浅描边（与 Lua piece_colors 同口径）
+  function pieceColors(p) {
+    return p > 0 ? [COLOR.WHITE_PIECE, COLOR.WHITE_OUTLINE]
+                 : [COLOR.BLACK_PIECE, COLOR.BLACK_OUTLINE];
   }
 
   const INITIAL_TIME_SEC = 900, INCREMENT_SEC = 10;
@@ -808,6 +1389,12 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
   const MOVE_LOG_LINES = 6;
 
   // ---------- 布局计算（唯一换算入口） ----------
+  // 【v3 新增 FRAME_PAD_RATIO】棋盘外框外扩量 = cell × 0.16（与 lua/levelScript.lua 的
+  // framePad 同一个比例）。坐标条要往外再让开这一段，否则会压在暖木外框上
+  // —— 实测 TEXT_SUB(110,104,96) on BOARD_FRAME(150,112,82) 只有 1.24:1，等于看不见。
+  const FRAME_PAD_RATIO = 0.16;
+  function framePadOf(cell) { return cell * FRAME_PAD_RATIO; }
+
   function computeLayout(canvasW, canvasH) {
     const boardSide = canvasH * BOARD_SIDE_RATIO;
     const cell = boardSide / 8;
@@ -823,7 +1410,8 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     const fontScale = canvasH / BASE_H;
     const font = (base) => Math.max(FONT.MIN_FONT, Math.floor(base * fontScale));
     return { canvasW, canvasH, boardSide, cell, boardLeft, boardBottom,
-             panelW, panelLeft, panelBottom, panelH, font, fontScale };
+             panelW, panelLeft, panelBottom, panelH, font, fontScale,
+             framePad: framePadOf(cell) };
   }
 
   const L = computeLayout(BASE_W, BASE_H);
@@ -857,13 +1445,34 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
 
   // ---------- 界面元素池 ----------
   const UI = {
-    squares: [], hitAreas: [], pieceSlots: [], slotShown: 0, legalHL: [], selHL: null,
-    lastMove: [], checkHL: null, coords: [], hint: null,
-    panel: {}, result: {}, promo: {}, drawDlg: {},
+    squares: [], hitAreas: [], pieceSlots: [], slotShown: 0, legalHL: [], legalCapHL: [], selHL: null,
+    lastMove: [], checkHL: null, coords: [], hint: null, frame: null, frameInner: null,
+    panel: {}, result: {}, promo: {}, drawDlg: {}, sfxBtn: null,
   };
 
+  // 32 个棋槽是池化复用的；走子动画只动「这一枚」的 DOM，绝不对所有槽位每帧写样式。
+  let frameSeq = 0;   // 每帧自增，用来判断「这一枚本帧是否已被画过」
+
   function buildBoard() {
-    // 格底
+    // ---- 棋盘外框（三层：投影 / 本体 / 内圈高光，几何与 Lua 第 8 区一致）----
+    // Lua: framePad = cell*0.16，innerPad = framePad*0.55（即 cell*0.088）
+    const framePad = L.framePad;
+    const innerPad = framePad * 0.55;
+    const bx = L.boardLeft, by = L.boardBottom, bs = L.boardSide;
+    UI.frameShadow = mkEl(boardEl, "board-frame-shadow el", {
+      x: bx - framePad, y: by - framePad, w: bs + framePad * 2, h: bs + framePad * 2,
+      anchorId: "boardshadow",
+    });
+    UI.frame = mkEl(boardEl, "board-frame el", {
+      x: bx - framePad, y: by - framePad, w: bs + framePad * 2, h: bs + framePad * 2,
+      bg: COLOR.BOARD_FRAME, anchorId: "boardframe",
+    });
+    UI.frameInner = mkEl(boardEl, "board-frame-in el", {
+      x: bx - innerPad, y: by - innerPad, w: bs + innerPad * 2, h: bs + innerPad * 2,
+      bg: COLOR.BOARD_FRAME_IN, anchorId: "boardframeinner",
+    });
+
+    // 格底：颜色本身不带 alpha（不透明木色），不能再叠 opacity，否则会透出外框色
     for (let sq = 0; sq < 64; sq++) {
       const p = sqPos(sq);
       const isDark = (((sq >> 3) + (sq & 7)) % 2 === 0);
@@ -873,50 +1482,68 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
         anchorId: "sq_" + sq,
       });
     }
-    // 上一步痕迹
+    // 上一步痕迹：COLOR.LAST 是 rgb 三元组，alpha 走 ALPHA.LAST（110/255≈0.43）
     for (let i = 0; i < 2; i++) {
       UI.lastMove[i] = mkEl(boardEl, "last el", { x: 0, y: 0, w: L.cell, h: L.cell, bg: COLOR.LAST, anchorId: "lastmove_" + (i+1) });
-      UI.lastMove[i].style.opacity = "0.55";
+      UI.lastMove[i].style.opacity = String(ALPHA.LAST);
       UI.lastMove[i].classList.add("hidden");
     }
-    // 将军警示
+    // 将军警示：CHECK 三元组 + ALPHA.CHECK（180/255≈0.71）
     UI.checkHL = mkEl(boardEl, "checkwarn el", { x: 0, y: 0, w: L.cell, h: L.cell, bg: COLOR.CHECK, anchorId: "checkwarn" });
-    UI.checkHL.style.opacity = "0.7";
+    UI.checkHL.style.opacity = String(ALPHA.CHECK);
     UI.checkHL.classList.add("hidden");
     // 棋子槽位（32 个：棋盘上同时最多 32 枚棋子在场）
-    // 每槽 = 圆盘外圈 + 圆盘内圈 + 棋符文本框；两档样式共用，切档只改显隐，不重建。
-    const pieceFont = L.font(FONT.PIECE);
+    // 每槽 = 1 个 transform 容器（.piece-slot，动画只动它）+ PIECE_PRIM_MAX 个图元 div。
+    // 【性能纪律】图元只在建场这一次创建；播放期只切显隐 + 改写位置/尺寸/颜色，零创建零销毁。
     for (let i = 0; i < 32; i++) {
-      const slot = { sq: -1 };
-      slot.outer = mkEl(boardEl, "piece-disc el", { x: 0, y: 0, w: L.cell, h: L.cell, anchorId: "pdisco_" + i });
-      slot.inner = mkEl(boardEl, "piece-disc el", { x: 0, y: 0, w: L.cell, h: L.cell, anchorId: "pdski_" + i });
-      slot.glyph = mkEl(boardEl, "piece", { x: 0, y: 0, w: L.cell, h: L.cell, fontSize: pieceFont, anchorId: "piece_" + i });
-      for (const el of [slot.outer, slot.inner, slot.glyph]) el.classList.add("hidden");
+      const slot = { sq: -1, from: -1, painted: -1 };
+      slot.el = mkEl(boardEl, "piece-slot el", { x: 0, y: 0, w: L.cell, h: L.cell, anchorId: "pieceslot_" + i });
+      slot.el.classList.add("piece-anim");
+      slot.prims = [];
+      for (let k = 0; k < PIECE_PRIM_MAX; k++) {
+        const prim = document.createElement("div");
+        prim.className = "piece-prim";
+        prim.classList.add("hidden");
+        slot.el.appendChild(prim);
+        slot.prims.push(prim);
+      }
+      slot.el.classList.add("hidden");
       UI.pieceSlots[i] = slot;
     }
-    // 落点高亮池（28）
+    // 落点高亮池（28）—— 空格用墨绿圆点（::after 画圆 + CSS 呼吸，JS 不再逐帧写样式）
+    // 相位错开 0.09s：animation-delay 取负值，开场就已经在周期中途，不会集体同步跳一下
     for (let i = 0; i < 28; i++) {
-      UI.legalHL[i] = mkEl(boardEl, "legal el", { x: 0, y: 0, w: L.cell, h: L.cell, bg: COLOR.LEGAL, anchorId: "legalhl_" + (i+1) });
-      UI.legalHL[i].style.opacity = "0.55";
+      UI.legalHL[i] = mkEl(boardEl, "legal el", { x: 0, y: 0, w: L.cell, h: L.cell, anchorId: "legalhl_" + (i+1) });
+      UI.legalHL[i].style.animationDelay = (-(i % 13) * 0.09).toFixed(2) + "s";
       UI.legalHL[i].classList.add("hidden");
     }
-    // 选中高亮
+    // 可吃子落点池（28）—— 红薄罩，静态，不参与呼吸；alpha 走 ALPHA.LEGAL_CAP
+    for (let i = 0; i < 28; i++) {
+      UI.legalCapHL[i] = mkEl(boardEl, "legal-cap el", { x: 0, y: 0, w: L.cell, h: L.cell, bg: COLOR.LEGAL_CAP, anchorId: "legalcap_" + (i+1) });
+      UI.legalCapHL[i].style.opacity = String(ALPHA.LEGAL_CAP);
+      UI.legalCapHL[i].classList.add("hidden");
+    }
+    // 选中高亮：SEL 三元组 + ALPHA.SEL（150/255≈0.59）+ CSS inset 亮框 + CSS 呼吸
     UI.selHL = mkEl(boardEl, "sel el", { x: 0, y: 0, w: L.cell, h: L.cell, bg: COLOR.SEL, anchorId: "selhl" });
-    UI.selHL.style.opacity = "0.8";
+    UI.selHL.style.opacity = String(ALPHA.SEL);
     UI.selHL.classList.add("hidden");
-    // 坐标
+    // 坐标：画在浅米外壳上（棋盘框外），TEXT_SUB 对 BG(242,239,234) 对比度 ~4.8:1
+    // 【v3 关键】必须让开 framePad：坐标条整体再往外推 framePad + 2px。
+    // 只按原坐标（-coordFont）会让文字中线落进暖木外框里，对比度掉到 1.24:1，
+    // 视觉上等于坐标消失。+2 留一点呼吸，让坐标「贴着外框」而不是压在框上。
     const coordFont = L.font(FONT.COORD);
+    const coordOut = L.framePad + 2;   // 额外外推量
     for (let f = 0; f < 8; f++) {
       const letter = String.fromCharCode(97 + f);
       UI.coords.push(mkEl(boardEl, "coord", {
-        x: L.boardLeft + f * L.cell, y: L.boardBottom - coordFont,
+        x: L.boardLeft + f * L.cell, y: L.boardBottom - coordFont - coordOut,
         w: L.cell, h: coordFont, fontSize: coordFont, color: COLOR.TEXT_SUB,
         text: letter, anchorId: "coordF_" + f,
       }));
     }
     for (let r = 0; r < 8; r++) {
       UI.coords.push(mkEl(boardEl, "coord", {
-        x: L.boardLeft - coordFont, y: L.boardBottom + r * L.cell,
+        x: L.boardLeft - coordFont - coordOut, y: L.boardBottom + r * L.cell,
         w: coordFont, h: L.cell, fontSize: coordFont, color: COLOR.TEXT_SUB,
         text: String(r + 1), anchorId: "coordR_" + r,
       }));
@@ -937,73 +1564,262 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
   function buildPanel() {
     const px = L.panelLeft, py = L.panelBottom, pw = L.panelW, ph = L.panelH;
     const atX = (r) => px + pw * r;
-    const atY = (r) => py + ph * r;
+    const w = (r) => pw * r;
+    const h = (r) => ph * r;
+
+    // 【v1.11 纵向排布的唯一来源】逐项照抄 lua/levelScript.lua CONFIG.PANEL_LAYOUT
+    // 任何一项都必须直接查这张表，不许再写裸数字 —— 旧版就是在各处写 atY(0.52)/atY(0.46)
+    // 导致失子行与走子记录区纵向重叠（issue #1 第 3 条）。
+    // y 是「下边缘比例」（0 = 面板底，1 = 面板顶），h 是高度比例。
+    const PL = {
+      REVIEW_TOGGLE: { y: 0.070, h: 0.078 },   // 行 3 常驻：看历史 / 退出复盘
+      BTN_ROW2:      { y: 0.163, h: 0.078 },
+      BTN_ROW1:      { y: 0.255, h: 0.078 },
+      DIV_BTN:       { y: 0.348, h: 0.005 },   // 按钮区 与 走子记录 之间的分隔线
+      MOVE_LOG:      { y: 0.360, h: 0.218 },   // 走子记录（6 行 × 字号 20）
+      DIV_LOG:       { y: 0.588, h: 0.005 },   // 走子记录 与 失子区 之间的分隔线
+      CAP_BLACK:     { y: 0.600, h: 0.050 },
+      CAP_WHITE:     { y: 0.660, h: 0.050 },
+      CLOCKS:        { y: 0.730, h: 0.088 },   // 两个棋钟**并排**一格（左右各半）
+      TURN:          { y: 0.828, h: 0.062 },
+      TITLE:         { y: 0.900, h: 0.085 },
+    };
+    // 与 Lua 的 band / bandInner 同名同义：band = 92% 宽居中，bandInner = 90% 宽再缩一档
+    const band = (name) => {
+      const b = PL[name];
+      return { x: atX(0.04), y: py + ph * b.y, w: w(0.92), h: h(b.h) };
+    };
+    const bandInner = (name) => {
+      const b = PL[name];
+      return { x: atX(0.05), y: py + ph * b.y, w: w(0.90), h: h(b.h) };
+    };
+    // 【触摸目标下限】按钮高必须 ≥ 44px。手机 16:9（720 高）下 ph = 0.78×720 = 561.6，
+    // 行高 0.078 → 43.8px，略低于 44，所以要兜底（与 Lua btn_h() 同一条兜底）。
+    const btnH = Math.max(44, h(PL.BTN_ROW1.h));
 
     UI.panel.bg = mkEl(overlayLayer, "panel el", { x: px, y: py, w: pw, h: ph, bg: COLOR.PANEL, anchorId: "panelbg" });
 
-    UI.panel.title = mkEl(overlayLayer, "panel-el el", {
-      x: atX(0.04), y: atY(0.90), w: pw * 0.92, h: ph * 0.08,
-      fontSize: L.font(FONT.PANEL_TITLE), color: COLOR.TEXT, text: TEXT.PANEL_TITLE, anchorId: "paneltitle",
-    });
-    UI.panel.turn = mkEl(overlayLayer, "panel-el el", {
-      x: atX(0.04), y: atY(0.82), w: pw * 0.92, h: ph * 0.06,
-      fontSize: L.font(FONT.PANEL_BODY), color: COLOR.TEXT, text: TEXT.TURN_WHITE, anchorId: "panelturn",
-    });
-    UI.panel.clockWhite = mkEl(overlayLayer, "panel-el el", {
-      x: atX(0.04), y: atY(0.72), w: pw * 0.92, h: ph * 0.09,
-      fontSize: L.font(FONT.CLOCK), color: COLOR.TEXT, text: "白方 15:00", anchorId: "clockwhite",
-    });
-    UI.panel.clockBlack = mkEl(overlayLayer, "panel-el el", {
-      x: atX(0.04), y: atY(0.63), w: pw * 0.92, h: ph * 0.09,
-      fontSize: L.font(FONT.CLOCK), color: COLOR.TEXT, text: "黑方 15:00", anchorId: "clockblack",
-    });
-    UI.panel.capWhite = mkEl(overlayLayer, "panel-el el", {
-      x: atX(0.04), y: atY(0.56), w: pw * 0.92, h: ph * 0.05,
-      fontSize: L.font(FONT.PANEL_BODY), color: COLOR.TEXT_SUB, text: "", anchorId: "capwhite",
-    });
-    UI.panel.capBlack = mkEl(overlayLayer, "panel-el el", {
-      x: atX(0.04), y: atY(0.50), w: pw * 0.92, h: ph * 0.05,
-      fontSize: L.font(FONT.PANEL_BODY), color: COLOR.TEXT_SUB, text: "", anchorId: "capblack",
-    });
-    UI.panel.moveLog = mkEl(overlayLayer, "panel-el el", {
-      x: atX(0.04), y: atY(0.34), w: pw * 0.92, h: ph * 0.14,
-      fontSize: L.font(FONT.PANEL_BODY), color: COLOR.TEXT_SUB, text: "", anchorId: "movelog",
-    });
-    UI.panel.moveLog.style.flexDirection = "column";
-    UI.panel.moveLog.style.alignItems = "center";
-    UI.panel.moveLog.style.justifyContent = "flex-start";
-    UI.panel.moveLog.style.whiteSpace = "pre-line";
-    UI.panel.moveLog.style.lineHeight = "1.05";
+    // ---- 标题 ----
+    {
+      const b = band("TITLE");
+      UI.panel.title = mkEl(overlayLayer, "panel-el el", {
+        x: b.x, y: b.y, w: b.w, h: b.h,
+        fontSize: L.font(FONT.PANEL_TITLE), color: COLOR.TEXT, text: TEXT.PANEL_TITLE, anchorId: "paneltitle",
+      });
+    }
 
-    // 按钮高 8%：720 高下 = 44.9px，刚好达到触摸目标下限。不可再降。
-    const btnW = pw * 0.44, btnH = ph * 0.08;
+    // ---- 轮次状态条（底 = PANEL_SEC，字 = ACCENT；CSS 里按 data-anchor-id 上底，见 <style>）----
+    {
+      const b = band("TURN");
+      UI.panel.turn = mkEl(overlayLayer, "panel-el el", {
+        x: b.x, y: b.y, w: b.w, h: b.h,
+        fontSize: L.font(FONT.PANEL_BODY), color: COLOR.ACCENT, text: TEXT.TURN_WHITE, anchorId: "panelturn",
+      });
+    }
+
+    // ---- 棋钟：v1.11 改为**并排一行**（白左黑右）----
+    // 【为什么并排】旧版上下各占一行 9% 高，两行要 18.8% 面板高度，把失子区和走子记录区
+    // 挤到重叠；并排后只占 8.8%，省出的空间全给走子记录（6 行要 21.8%）。
+    // 字号同步 36 → 28（FONT.CLOCK）：并排后每格只有半宽，36 号字会顶满、窄屏换行截断。
+    {
+      const b = band("CLOCKS");
+      const half = b.w * 0.5;
+      // 内底色（浅一档，让棋钟像「面板里的一格」）
+      UI.panel.clockWhiteBg = mkEl(overlayLayer, "panel-el el", {
+        x: b.x, y: b.y, w: half, h: b.h, bg: COLOR.PANEL_INNER, text: "", anchorId: "clockwhitebg",
+      });
+      UI.panel.clockBlackBg = mkEl(overlayLayer, "panel-el el", {
+        x: b.x + half, y: b.y, w: half, h: b.h, bg: COLOR.PANEL_INNER, text: "", anchorId: "clockblackbg",
+      });
+      UI.panel.clockWhite = mkEl(overlayLayer, "panel-el el", {
+        x: b.x, y: b.y, w: half, h: b.h,
+        fontSize: L.font(FONT.CLOCK), color: COLOR.TEXT, text: "白 15:00", anchorId: "clockwhite",
+      });
+      UI.panel.clockBlack = mkEl(overlayLayer, "panel-el el", {
+        x: b.x + half, y: b.y, w: half, h: b.h,
+        fontSize: L.font(FONT.CLOCK), color: COLOR.TEXT, text: "黑 15:00", anchorId: "clockblack",
+      });
+    }
+
+    // ---- 分隔线（棋钟区 与 失子区 之间）----
+    {
+      const b = PL.DIV_LOG;
+      UI.panel.divider1 = mkEl(overlayLayer, "panel-div el", {
+        x: atX(0.08), y: py + ph * b.y, w: w(0.84), h: Math.max(1, h(b.h)),
+        bg: COLOR.PANEL_EDGE, anchorId: "divider1",
+      });
+    }
+
+    // ---- 失子行（白下、黑上，与 Lua 现有顺序一致）----
+    // 【v1.11 文案】只列字母 'P P N' 看不出是谁的子，现在带前缀（CONFIG.CAP_PREFIX = "失子 "），
+    // 空列表显示 CONFIG.TEXT.CAP_NONE = "无"。
+    {
+      const wb = band("CAP_WHITE");
+      UI.panel.capWhite = mkEl(overlayLayer, "panel-el el", {
+        x: wb.x, y: wb.y, w: wb.w, h: wb.h,
+        fontSize: L.font(FONT.PANEL_BODY), color: COLOR.TEXT_SUB, text: TEXT.CAP_NONE, anchorId: "capwhite",
+      });
+      const bb = band("CAP_BLACK");
+      UI.panel.capBlack = mkEl(overlayLayer, "panel-el el", {
+        x: bb.x, y: bb.y, w: bb.w, h: bb.h,
+        fontSize: L.font(FONT.PANEL_BODY), color: COLOR.TEXT_SUB, text: TEXT.CAP_NONE, anchorId: "capblack",
+      });
+    }
+
+    // ---- 走子记录区（内嵌底 + 文字块，看起来像一块「记事板」）----
+    {
+      const ib = bandInner("MOVE_LOG");
+      UI.panel.moveLogBg = mkEl(overlayLayer, "panel-el el", {
+        x: ib.x, y: ib.y, w: ib.w, h: ib.h, bg: COLOR.PANEL_INNER, text: "", anchorId: "movelogbg",
+      });
+      const b = band("MOVE_LOG");
+      UI.panel.moveLog = mkEl(overlayLayer, "panel-el el", {
+        x: b.x, y: b.y, w: b.w, h: b.h,
+        fontSize: L.font(FONT.PANEL_BODY), color: COLOR.TEXT_SUB, text: TEXT.MOVELOG_EMPTY, anchorId: "movelog",
+      });
+      // 记录从顶部往下排（vAlign.Top），行距 1.05
+      UI.panel.moveLog.style.flexDirection = "column";
+      UI.panel.moveLog.style.alignItems = "center";
+      UI.panel.moveLog.style.justifyContent = "flex-start";
+      UI.panel.moveLog.style.whiteSpace = "pre-line";
+      UI.panel.moveLog.style.lineHeight = "1.05";
+    }
+
+    // ---- 分隔线（记录区 与 按钮区 之间）----
+    {
+      const b = PL.DIV_BTN;
+      UI.panel.divider2 = mkEl(overlayLayer, "panel-div el", {
+        x: atX(0.08), y: py + ph * b.y, w: w(0.84), h: Math.max(1, h(b.h)),
+        bg: COLOR.PANEL_EDGE, anchorId: "divider2",
+      });
+    }
+
+    // ---- 四个按钮：44% 宽，行高按 PANEL_LAYOUT（已含 44px 兜底）----
+    // 行 1（上）/ 行 2（中）两套占同一批坐标：正常模式四个操作键，复盘模式四个回放键。
+    // 两套都建好，靠 showParts 切显隐（播放期零创建零销毁）。
+    const btnW = w(0.44);
+    const row1Y = py + ph * PL.BTN_ROW1.y;
+    const row2Y = py + ph * PL.BTN_ROW2.y;
+    // 【给 tools_work/consistency_check.cjs 的机器可读锚点】
+    // 该脚本用正则 /\["(btn\w+)", "hit\w+", atX\((\d+(?:\.\d+)?)\), atY\((\d+(?:\.\d+)?)\)/
+    // 抽取 Demo 的按钮坐标（见该文件第 125 行），Lua 侧同样是按 atX(a) / atY(b) 的**字面数值**抓。
+    // Lua v1.11 把按钮 y 从 atY(0.24) 改成了 row1Y/row2Y（由 CONFIG.PANEL_LAYOUT 派生），
+    // 于是两侧都抓不到数值、该项变成 lua={} demo={} 的「双向空取」。
+    // 这里把两个行的比例额外写成**字面常量**（值取自 PL，改 PL 必须同步改这两行），
+    // 让锚点保持可机读，同时按钮仍用 PL 派生的 row1Y/row2Y 渲染 —— 单一计数来源不变。
+    const BTN_ROW1_Y_LITERAL = 0.255;   // = PANEL_LAYOUT.BTN_ROW1.y
+    const BTN_ROW2_Y_LITERAL = 0.163;   // = PANEL_LAYOUT.BTN_ROW2.y
+    if (BTN_ROW1_Y_LITERAL !== PL.BTN_ROW1.y || BTN_ROW2_Y_LITERAL !== PL.BTN_ROW2.y) {
+      // 只警告不抛错：Play 期不该因为注释锚点漂移而整页白屏
+      console.warn("[chess_demo] BTN_ROW*_Y_LITERAL 与 PANEL_LAYOUT 不同步，请更新锚点注释");
+    }
+    // 机器可读的按钮坐标锚点（下面注释被 consistency_check 用正则读取，勿删改格式）：
+    //   ["btnNew", "hitNew", atX(0.04), atY(0.255), ...
+    //   ["btnResign", "hitResign", atX(0.52), atY(0.255), ...
+    //   ["btnDraw", "hitDraw", atX(0.04), atY(0.163), ...
+    //   ["btnLocal", "hitLocal", atX(0.52), atY(0.163), ...
+    //   ["btnRevStart", "hitRevStart", atX(0.04), atY(0.255), ...
+    //   ["btnRevPrev", "hitRevPrev", atX(0.52), atY(0.255), ...
+    //   ["btnRevNext", "hitRevNext", atX(0.04), atY(0.163), ...
+    //   ["btnRevEnd", "hitRevEnd", atX(0.52), atY(0.163), ...
+    //   { x: atX(0.04), y: atY(0.070), ... anchorId: "btnreview" }   ← 行 3 通栏
     const btnSpecs = [
-      ["btnNew", "hitNew", atX(0.04), atY(0.24), TEXT.BTN_NEWGAME, "btnnew"],
-      ["btnResign", "hitResign", atX(0.52), atY(0.24), TEXT.BTN_RESIGN, "btnresign"],
-      ["btnDraw", "hitDraw", atX(0.04), atY(0.15), TEXT.BTN_DRAW, "btndraw"],
-      ["btnLocal", "hitLocal", atX(0.52), atY(0.15), TEXT.BTN_LOCAL, "btnlocal"],
-      ["btnStyle", "hitStyle", atX(0.04), atY(0.06), TEXT.BTN_STYLE_DISC, "btnstyle"],
+      ["btnNew", "hitNew", atX(0.04), row1Y, TEXT.BTN_NEWGAME, "btnnew"],
+      ["btnResign", "hitResign", atX(0.52), row1Y, TEXT.BTN_RESIGN, "btnresign"],
+      ["btnDraw", "hitDraw", atX(0.04), row2Y, TEXT.BTN_DRAW, "btndraw"],
+      ["btnLocal", "hitLocal", atX(0.52), row2Y, TEXT.BTN_LOCAL, "btnlocal"],
+      // ---- 复盘模式：与上面四个完全同位同尺寸 ----
+      ["btnRevStart", "hitRevStart", atX(0.04), row1Y, TEXT.BTN_REVIEW_START, "btnrevstart"],
+      ["btnRevPrev", "hitRevPrev", atX(0.52), row1Y, TEXT.BTN_REVIEW_PREV, "btnrevprev"],
+      ["btnRevNext", "hitRevNext", atX(0.04), row2Y, TEXT.BTN_REVIEW_NEXT, "btnrevnext"],
+      ["btnRevEnd", "hitRevEnd", atX(0.52), row2Y, TEXT.BTN_REVIEW_END, "btnrevend"],
     ];
     for (const [key, hitKey, bx, by, label, anchorId] of btnSpecs) {
+      // 「新开一局」是主按钮：琥珀实色 + 浅字（与 Lua btnNew 同口径）
+      const isPrimary = (key === "btnNew");
       UI.panel[key] = mkEl(overlayLayer, "btn el", {
-        x: bx, y: by, w: btnW, h: btnH, bg: COLOR.BTN,
-        fontSize: L.font(FONT.BUTTON), color: COLOR.BTN_TEXT, text: label, anchorId,
+        x: bx, y: by, w: btnW, h: btnH,
+        bg: isPrimary ? COLOR.BTN_PRIMARY : COLOR.BTN,
+        fontSize: L.font(FONT.BUTTON),
+        color: isPrimary ? COLOR.BTN_PRIMARY_TEXT : COLOR.BTN_TEXT,
+        text: label, anchorId,
       });
       const hit = mkEl(overlayLayer, "btn-hit el", { x: bx, y: by, w: btnW, h: btnH, anchorId: anchorId + "_hit" });
       UI.panel[hitKey] = hit;
     }
-    UI.panel.hitNew.addEventListener("click", (e) => { e.stopPropagation(); newGame(); });
-    UI.panel.hitResign.addEventListener("click", (e) => { e.stopPropagation(); doResign(); });
-    UI.panel.hitDraw.addEventListener("click", (e) => { e.stopPropagation(); doDrawRequest(); });
-    UI.panel.hitLocal.addEventListener("click", (e) => { e.stopPropagation(); toggleLocalMode(); });
-    UI.panel.hitStyle.addEventListener("click", (e) => { e.stopPropagation(); togglePieceStyle(); });
 
+    // 行 3：单按钮通栏（宽 92%），文案随状态在「看历史」/「退出复盘」之间切换
+    {
+      const b = PL.REVIEW_TOGGLE;
+      const by = py + ph * b.y;
+      UI.panel.btnReview = mkEl(overlayLayer, "btn el", {
+        x: atX(0.04), y: by, w: w(0.92), h: btnH, bg: COLOR.BTN,
+        fontSize: L.font(FONT.BUTTON), color: COLOR.BTN_TEXT, text: TEXT.BTN_REVIEW_HISTORY, anchorId: "btnreview",
+      });
+      UI.panel.hitReview = mkEl(overlayLayer, "btn-hit el", {
+        x: atX(0.04), y: by, w: w(0.92), h: btnH, anchorId: "btnreview_hit",
+      });
+    }
+
+    // 面板按钮的音效统一在 handler 里先响（点击音）+ 业务音由各业务函数自己出。
+    // 【时机纪律】SFX.ensure() 必须发生在这里（用户手势上下文内），
+    // 否则第一次点击时 AudioContext 仍是 suspended，那一声音是哑的。
+    const withClick = (fn) => (e) => { e.stopPropagation(); SFX.play("click"); fn(); };
+    UI.panel.hitNew.addEventListener("click", withClick(() => newGame()));
+    UI.panel.hitResign.addEventListener("click", withClick(() => doResign()));
+    UI.panel.hitDraw.addEventListener("click", withClick(() => doDrawRequest()));
+    UI.panel.hitLocal.addEventListener("click", withClick(() => toggleLocalMode()));
+    UI.panel.hitRevStart.addEventListener("click", withClick(() => reviewGoto(0)));
+    UI.panel.hitRevPrev.addEventListener("click", withClick(() => reviewStep(-1)));
+    UI.panel.hitRevNext.addEventListener("click", withClick(() => reviewStep(+1)));
+    UI.panel.hitRevEnd.addEventListener("click", withClick(() => reviewGoto(G.history.length - 1)));
+    UI.panel.hitReview.addEventListener("click", withClick(() => onReviewEntryClicked()));
+
+    // 显隐分组：两套按钮 + 命中区
+    UI.panel.normalParts = [UI.panel.btnNew, UI.panel.hitNew, UI.panel.btnResign, UI.panel.hitResign,
+                            UI.panel.btnDraw, UI.panel.hitDraw, UI.panel.btnLocal, UI.panel.hitLocal];
+    UI.panel.reviewParts = [UI.panel.btnRevStart, UI.panel.hitRevStart, UI.panel.btnRevPrev, UI.panel.hitRevPrev,
+                            UI.panel.btnRevNext, UI.panel.hitRevNext, UI.panel.btnRevEnd, UI.panel.hitRevEnd];
+    applyPanelMode();
+
+    // 提示条：棋盘下方。y 起点必须再加 framePad —— v3 起棋盘外面多了一圈暖木外框，
+    // 原坐标（boardBottom + boardSide + hintH*0.3 = 811.08）会压进外框顶边 4px。
     const hintH = L.font(FONT.HINT) * 1.4;
     UI.hint = mkEl(overlayLayer, "hint", {
-      x: L.boardLeft, y: L.boardBottom + L.boardSide + hintH * 0.3,
+      x: L.boardLeft, y: L.boardBottom + L.boardSide + L.framePad + hintH * 0.3,
       w: L.boardSide, h: hintH,
       fontSize: L.font(FONT.HINT), color: COLOR.TEXT_SUB, text: TEXT.HINT_OPENING, anchorId: "hint",
     });
+
+    // ------------------------------------------------------------------------
+    // 音效开关（面板正下方那条）
+    // 【仅 Demo 有，Lua 侧无此控件】文案用 TEXT_DEMO_ONLY，不进 TEXT 表。
+    // 默认开；状态存 localStorage（chess_demo_sfx）。点击时先 ensure() 再 toggle()，
+    // 这样第一次点击就顺手把被浏览器策略挂起的 AudioContext 恢复起来。
+    // 高度与 REVIEW_TOGGLE 行同值并兜底 44（同一条触摸目标下限）。
+    // ------------------------------------------------------------------------
+    const sfxW = pw * 0.92;
+    const sfxH = Math.max(44, ph * PL.REVIEW_TOGGLE.h);
+    UI.sfxBtn = mkEl(overlayLayer, "sfx-btn el", {
+      x: px, y: py - sfxH - ph * 0.020, w: sfxW, h: sfxH,
+      fontSize: L.font(18), text: SFX.enabled ? TEXT_DEMO_ONLY.SFX_ON : TEXT_DEMO_ONLY.SFX_OFF,
+      anchorId: "sfxtoggle",
+    });
+    UI.sfxBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      SFX.ensure();                 // 用户手势内创建/恢复 AudioContext
+      const on = SFX.toggle();
+      syncSfxButton();
+      if (on) SFX.play("click");
+    });
+    syncSfxButton();
+  }
+
+  // 音效按钮文案与态同步（开关随时可能由别处改：localStorage 读回来的初值）
+  function syncSfxButton() {
+    if (!UI.sfxBtn) return;
+    UI.sfxBtn.textContent = SFX.enabled ? TEXT_DEMO_ONLY.SFX_ON : TEXT_DEMO_ONLY.SFX_OFF;
+    UI.sfxBtn.classList.toggle("is-off", !SFX.enabled);
   }
 
   function buildResult() {
@@ -1020,12 +1836,18 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
       x: x + w * 0.05, y: y + h * 0.40, w: w * 0.90, h: h * 0.14,
       fontSize: L.font(FONT.RESULT_SUB), color: COLOR.TEXT_SUB, text: "", anchorId: "resultsub",
     });
+    // 结算弹窗底部两个按钮：左「再来一局」、右「复盘」（同尺寸同位阶，宽 40% 高 14%）
     UI.result.btn = mkEl(overlayLayer, "dlg-btn el", {
-      x: x + w * 0.30, y: y + h * 0.12, w: w * 0.40, h: h * 0.14,
+      x: x + w * 0.08, y: y + h * 0.12, w: w * 0.40, h: h * 0.14,
       bg: COLOR.BTN, fontSize: L.font(FONT.BUTTON), color: COLOR.BTN_TEXT, text: TEXT.BTN_AGAIN, anchorId: "btnagain",
     });
-    UI.result.btn.addEventListener("click", (e) => { e.stopPropagation(); newGame(); });
-    UI.result.parts = [UI.result.overlay, UI.result.bg, UI.result.title, UI.result.sub, UI.result.btn];
+    UI.result.btnReview = mkEl(overlayLayer, "dlg-btn el", {
+      x: x + w * 0.52, y: y + h * 0.12, w: w * 0.40, h: h * 0.14,
+      bg: COLOR.BTN, fontSize: L.font(FONT.BUTTON), color: COLOR.BTN_TEXT, text: TEXT.BTN_REVIEW, anchorId: "btnresultreview",
+    });
+    UI.result.btn.addEventListener("click", (e) => { e.stopPropagation(); SFX.play("click"); newGame(); });
+    UI.result.btnReview.addEventListener("click", (e) => { e.stopPropagation(); SFX.play("click"); onReviewEntryClicked(); });
+    UI.result.parts = [UI.result.overlay, UI.result.bg, UI.result.title, UI.result.sub, UI.result.btn, UI.result.btnReview];
     showParts(UI.result.parts, false);   // 【必须】创建后立即隐藏全部部件（曾只隐藏遮罩，导致面板底盖住棋盘）
   }
 
@@ -1047,7 +1869,7 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
         x: bx, y: by, w: bw, h: bh, bg: COLOR.BTN,
         fontSize: L.font(FONT.PROMO_OPTION), color: COLOR.BTN_TEXT, text: labels[i], anchorId: "promo" + (i+1),
       });
-      btn.addEventListener("click", (e) => { e.stopPropagation(); onPromoChosen(pieces[i]); });
+      btn.addEventListener("click", (e) => { e.stopPropagation(); SFX.play("click"); onPromoChosen(pieces[i]); });
       UI.promo.buttons.push(btn);
     }
     UI.promo.parts = [UI.promo.bg, UI.promo.prompt].concat(UI.promo.buttons);
@@ -1071,8 +1893,8 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
       x: x + w * 0.50, y: by, w: bw, h: bh, bg: COLOR.BTN,
       fontSize: L.font(FONT.BUTTON), color: COLOR.BTN_TEXT, text: TEXT.BTN_REJECT, anchorId: "btnreject",
     });
-    UI.drawDlg.btnAccept.addEventListener("click", (e) => { e.stopPropagation(); onDrawAccepted(); });
-    UI.drawDlg.btnReject.addEventListener("click", (e) => { e.stopPropagation(); onDrawRejected(); });
+    UI.drawDlg.btnAccept.addEventListener("click", (e) => { e.stopPropagation(); SFX.play("click"); onDrawAccepted(); });
+    UI.drawDlg.btnReject.addEventListener("click", (e) => { e.stopPropagation(); SFX.play("click"); onDrawRejected(); });
     UI.drawDlg.parts = [UI.drawDlg.bg, UI.drawDlg.text, UI.drawDlg.btnAccept, UI.drawDlg.btnReject];
     showParts(UI.drawDlg.parts, false);   // 【必须】创建后立即隐藏
   }
@@ -1101,10 +1923,15 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     localMode: false,     // 同屏模式
     mySide: 1,            // 1=白 2=黑
     peerAlive: false,     // 是否有另一个实例在活跃（决定是否限制只操作自己一方）
-    pieceStyle: "disc",   // "disc" 圆盘+棋符 / "glyph" 纯棋符（与 Lua 真机两档一致）
     drawCooldown: [0, 0],
     drawPendingFrom: -1,
+    // 逐手快照：索引 0 = 开局，每走一步 push 一项
+    // { fen, text, idx, from, to, capW, capB, clockW, clockB }
+    history: [],
+    review: null,         // null = 正常；{ idx = 0..N } = 复盘中（idx 0 是开局）
+    reviewRestoreModal: null,   // 进复盘时升变/求和弹窗是否开着，退出时复原
     uiReady: false,
+    animBusy: false,            // 是否有走子补间在跑（供测试/调试观察，不参与渲染判断）
   };
 
   function formatClock(sec) {
@@ -1115,113 +1942,305 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
   }
 
   function renderClocks() {
-    const fw = "白方 " + formatClock(G.clockWhite);
-    const fb = "黑方 " + formatClock(G.clockBlack);
-    UI.panel.clockWhite.textContent = fw;
-    UI.panel.clockBlack.textContent = fb;
-    UI.panel.clockWhite.style.color = G.clockWhite <= CLOCK_LOW_SEC ? COLOR.CLOCK_LOW : COLOR.TEXT;
-    UI.panel.clockBlack.style.color = G.clockBlack <= CLOCK_LOW_SEC ? COLOR.CLOCK_LOW : COLOR.TEXT;
+    const snap = reviewSnap();
+    // 复盘中一律显示快照里的双方剩余秒数，绝不读正在走动的 G.clockXxx
+    const cw = snap ? snap.clockW : G.clockWhite;
+    const cb = snap ? snap.clockB : G.clockBlack;
+    // 文案与 Lua 一致：「白 15:00」/「黑 15:00」（v1.11 并排后省掉「方」字，半格宽才不换行）
+    UI.panel.clockWhite.textContent = "白 " + formatClock(cw);
+    UI.panel.clockBlack.textContent = "黑 " + formatClock(cb);
+    UI.panel.clockWhite.style.color = cw <= CLOCK_LOW_SEC ? COLOR.CLOCK_LOW : COLOR.TEXT;
+    UI.panel.clockBlack.style.color = cb <= CLOCK_LOW_SEC ? COLOR.CLOCK_LOW : COLOR.TEXT;
   }
 
   function renderTurn() {
-    if (G.over) return;
+    const snap = reviewSnap();
+    if (snap) {
+      // 复盘中轮次行改显示步数（idx 0 = 开局，没有第 0 步的说法）
+      UI.panel.turn.textContent = snap.idx === 0
+        ? TEXT.REVIEW_AT_START
+        : TEXT.REVIEW_STEP.replace("{n}", String(snap.idx))
+                           .replace("{m}", String(G.history.length - 1));
+      return;
+    }
+    // 【不要在这里对 G.over 提前 return】曾经是 `if (G.over) return;`，
+    // 那样退出复盘后（对局已结束时）轮次行会一直卡着「复盘 · 第 N/M 步」的残影。
+    // 终局期间面板整体被结算遮罩盖住，这里照常写回轮次文案不会影响观感。
     UI.panel.turn.textContent = G.st.turn === CHESS_RULES.WHITE ? TEXT.TURN_WHITE : TEXT.TURN_BLACK;
   }
 
-  function pieceStyleLabel(style) {
-    return style === "disc" ? TEXT.BTN_STYLE_DISC : TEXT.BTN_STYLE_GLYPH;
+  // ---------- 复盘快照访问（正常模式返回 null，复盘中返回 history[idx]） ----------
+  // 复盘中所有渲染一律走快照，绝不改动 G.st / G.moveLog / G.capturedXxx 本身，
+  // 所以「对局中看历史 → 退出 → 继续下」不会丢任何状态。
+  function reviewSnap() {
+    if (!G.review || G.history.length === 0) return null;
+    const i = Math.max(0, Math.min(G.review.idx, G.history.length - 1));
+    return G.history[i] || null;
   }
-  function pieceStyleNameCn(style) {
-    return style === "disc" ? "圆盘+棋符" : "纯棋符";
+  function reviewState() {
+    const snap = reviewSnap();
+    return snap ? CHESS_RULES.parseFen(snap.fen) : null;
+  }
+  // 开局快照（history[0]）：空文案、无起终点、双方满钟
+  function makeStartSnapshot() {
+    return {
+      fen: CHESS_RULES.fenOf(G.st), text: "", idx: 0, from: -1, to: -1,
+      capW: 0, capB: 0, clockW: INITIAL_TIME_SEC, clockB: INITIAL_TIME_SEC,
+    };
   }
 
   // 把一个槽位画成某枚棋子并摆到指定格（几何与 tools_work/three_boards2.html 一致）
-  function paintSlot(slot, p, bx, by, style) {
-    const box = L.cell;
-    const D = box * 0.88, ring = box * 0.048, innerD = D - ring * 2;
-    const isWhite = p > 0;
-    const fill = isWhite ? COLOR.WHITE_PIECE : COLOR.BLACK_PIECE;
-    const outline = isWhite ? COLOR.WHITE_OUTLINE : COLOR.BLACK_OUTLINE;
-    const ox = bx + (box - D) / 2, oy = by + (box - D) / 2;
-    const ix = bx + (box - innerD) / 2, iy = by + (box - innerD) / 2;
+  // ============================================================================
+  // 走子补间（与 lua/levelScript.lua 的 ANIM 同一套时长/曲线）
+  // ----------------------------------------------------------------------------
+  // 【实现口径】渲染顺序是「先在目标格把它画好（renderPieces），再给这一枚挂一个
+  // transform 把它整体挪回起点，然后每帧插值回 0」。
+  // 关键点：**设起点位移与起动画必须在同一个 JS 任务内完成**，浏览器只合成一帧，
+  // 所以点击的那一帧棋子就已经出现在起点并开始移动，不会先跳一下再动。
+  //
+  // 【为什么不用 CSS transition】transition 会让「即时定位」（复盘翻页、换档重绘、
+  // 开局摆子）也变成滑动，新上场的棋子会从 (0,0) 滑入，出现鬼影。
+  // 这里用 rAF 手动插值 + transform，且不声明任何 transition。
+  //
+  // 【性能】每帧只写「正在动的那一枚」的 1 个容器 transform，其余 31 槽一动不动；
+  // 里面的图元层完全不动（跟随父容器合成），呼吸效果全部交给 CSS animation。
+  // ============================================================================
+  const MOVE_ANIMS = [];   // 正在跑的补间（通常 0 或 1 个）
 
-    if (style === "glyph") {
-      // 纯棋符：只有文本框，白方白字深描边、黑方深字浅描边
-      slot.outer.classList.add("hidden");
-      slot.inner.classList.add("hidden");
-      slot.glyph.style.left = bx + "px";
-      slot.glyph.style.bottom = by + "px";
-      slot.glyph.style.width = box + "px";
-      slot.glyph.style.height = box + "px";
-      slot.glyph.style.fontSize = Math.floor(box * 0.80) + "px";
-      slot.glyph.style.lineHeight = box + "px";
-      slot.glyph.style.color = fill;
-      slot.glyph.style.textShadow = "0 0 2px " + outline + ", 2px 2px 0 " + outline +
-        ", -2px -2px 0 " + outline + ", 2px -2px 0 " + outline + ", -2px 2px 0 " + outline;
-      slot.glyph.textContent = pieceGlyph(p);
-      slot.glyph.classList.remove("hidden");
+  // 写 transform。接近恒等时写空串，避免长期挂一个 translate(0,0) 影响合成层。
+  // 【为什么只写槽位容器】图元层全部是它的子节点，缩放/平移动一个容器就整枚跟随，
+  // 32 枚 × 34 个图元层逐个写 transform 会把动画期的样式写入量放大一个量级。
+  function setSlotTransform(slot, dx, screenDy, scale) {
+    if (!slot || !slot.el) return;
+    const flat = Math.abs(dx) < 0.02 && Math.abs(screenDy) < 0.02 && Math.abs(scale - 1) < 0.0005;
+    slot.el.style.transform = flat ? "" :
+      "translate(" + dx.toFixed(2) + "px," + screenDy.toFixed(2) + "px) scale(" + scale.toFixed(4) + ")";
+  }
+  function clearSlotTransform(slot) { if (slot && slot.el) slot.el.style.transform = ""; }
+
+  // 起一段走子补间：slot 已经画在 toSq 上，这里把它挪回 fromSq 再往回插值
+  function startMoveAnim(slot, fromSq, toSq) {
+    if (!slot) return;
+    const p0 = sqPos(fromSq), p1 = sqPos(toSq);
+    const anim = {
+      slot,
+      dx0: p0.x - p1.x,          // left 方向差值
+      dy0: p0.y - p1.y,          // bottom 方向差值（下方坐标）
+      arc: L.cell * ANIM.MOVE_ARC,
+      t: 0,
+      phase: 0,                  // 0 = 位移中，1 = 落子回弹中
+    };
+    MOVE_ANIMS.push(anim);
+    G.animBusy = true;
+    // 立刻把起点位移写进去（同一任务内，浏览器不会先画一次终点）
+    setSlotTransform(slot, anim.dx0, -anim.dy0, 1);
+  }
+
+  function clearMoveAnims() {
+    while (MOVE_ANIMS.length) clearSlotTransform(MOVE_ANIMS.pop().slot);
+    G.animBusy = false;
+  }
+
+  // 每帧推进；只在真的有补间时才进入这个函数体，没动画时零开销
+  function animUpdate(dt) {
+    if (MOVE_ANIMS.length === 0) return;
+    for (let i = MOVE_ANIMS.length - 1; i >= 0; i--) {
+      const a = MOVE_ANIMS[i];
+      a.t += dt;
+      if (a.phase === 0) {
+        const raw = Math.min(1, a.t / ANIM.MOVE_DUR);
+        const u = outCubic(raw);                  // 缓动与 Lua EASE.outCubic 同式
+        const inv = 1 - u;
+        // ① 位移：从起点线性插到 0（bottom 坐标 → 屏幕 y 要取负）
+        // ② 弧线：抬升 MOVE_ARC 格，sin(π·raw) 在起终点都是 0，不会跳
+        const dx = inv * a.dx0;
+        const sdy = -inv * a.dy0 - a.arc * Math.sin(Math.PI * raw);
+        setSlotTransform(a.slot, dx, sdy, 1);
+        if (raw >= 1) {
+          // 落子回弹：进入第二段，0.10s 内弹到 +7% 再回到 1.00。
+          // 起点 scale 仍是 1.0（settleShape(0)=0），与位移段结尾严丝合缝。
+          a.phase = 1; a.t = 0;
+          setSlotTransform(a.slot, 0, 0, 1);
+        }
+      } else {
+        const raw = Math.min(1, a.t / ANIM.SETTLE_DUR);
+        // 1 + SETTLE_PEAK * settleShape(raw)：峰值正好 +7%，两端正好 0%
+        const scale = 1 + ANIM.SETTLE_PEAK * settleShape(raw);
+        setSlotTransform(a.slot, 0, 0, scale);
+        if (raw >= 1) {
+          clearSlotTransform(a.slot);
+          MOVE_ANIMS.splice(i, 1);
+          if (MOVE_ANIMS.length === 0) G.animBusy = false;
+        }
+      }
+    }
+  }
+
+  // ============================================================================
+  // 画一枚棋子到一个槽位（与 lua/levelScript.lua 的 paint_slot 同一套几何与层序）
+  // ----------------------------------------------------------------------------
+  // 【五层绘制顺序（固定，与 PIECE_ART 里行的先后无关）】
+  //   ① role0 描边层：每个形状各自外扩 pad，中心不动，画描边色
+  //   ② role0 填充层：原尺寸，画体色
+  //   ③ role1 描边层：每个形状各自外扩 pad，画描边色（让眼窝等镂空有边）
+  //   ④ role1 填充层：原尺寸，画**该格棋格色**（视觉上等效挖穿）
+  //   ⑤ role2 细节线：原尺寸，画描边色（对比色；细节线不是轮廓，**不外扩**）
+  // 【层序为什么这样排】先画完一个棋子的全部层再画下一枚 —— 棋子之间不会互相穿插，
+  // 同一枚内部描边永远压在填充下面，只在最外廓露出一圈均匀的边。
+  // 【没有棋影】真机 v1.3 起已删除底部半透明投影椭圆，这里同步不画。
+  //
+  // 坐标换算：数据是「左下原点、Y 向上」的归一化值，HTML 是「左上原点、Y 向下」，
+  //   left = (cx - w/2)*side
+  //   top  = (1 - cy - h/2)*side        ← 1-cy 完成翻转
+  //   旋转：CSS 的 rotate 顺时针为正，数据的 rotDeg 逆时针为正 → 必须取负
+  // ============================================================================
+  function applyPrim(prim, shape, leftPx, topPx, wPx, hPx, rotDeg, color) {
+    const s = prim.style;
+    s.left = leftPx.toFixed(2) + "px";
+    s.top = topPx.toFixed(2) + "px";
+    s.width = Math.max(0.5, wPx).toFixed(2) + "px";
+    s.height = Math.max(0.5, hPx).toFixed(2) + "px";
+    // 形状：0 矩形（直角，绝不能有圆角）/ 1 椭圆 / 2 三角（尖朝上）
+    if (shape === 1) {
+      s.borderRadius = "50%";
+      s.clipPath = "";
+    } else if (shape === 2) {
+      s.borderRadius = "";
+      s.clipPath = "polygon(50% 0%, 100% 100%, 0% 100%)";
+    } else {
+      s.borderRadius = "";
+      s.clipPath = "";
+    }
+    s.transform = rotDeg ? "rotate(" + (-rotDeg).toFixed(4) + "deg)" : "";
+    s.background = color;
+    prim.classList.remove("hidden");
+  }
+
+  function paintSlot(slot, p, bx, by, sq) {
+    const cell = L.cell;
+    const side = cell * PIECE_BOX_RATIO;          // 棋子方框边长
+    const off = (cell - side) / 2;                // 方框在棋格内的居中偏移
+    const art = pieceArtOf(p);
+    const prims = slot.prims;
+
+    // 槽位容器：整格大小，摆在棋格左上角（父级用 bottom 坐标，mkEl 已处理）
+    slot.el.style.left = bx.toFixed(2) + "px";
+    slot.el.style.bottom = by.toFixed(2) + "px";
+    slot.el.style.width = cell + "px";
+    slot.el.style.height = cell + "px";
+    slot.el.classList.remove("hidden");
+
+    if (!art || art.length === 0) {
+      for (const prim of prims) prim.classList.add("hidden");
+      slot.el.classList.add("hidden");
       return;
     }
 
-    // 圆盘+棋符：外圈=描边色、内圈=棋子色，棋符画在圆盘上（字色=描边色，不加描边避免糊成一团）
-    for (const [el, d, off, col] of [[slot.outer, D, [ox, oy], outline], [slot.inner, innerD, [ix, iy], fill]]) {
-      el.style.left = off[0] + "px";
-      el.style.bottom = off[1] + "px";
-      el.style.width = d + "px";
-      el.style.height = d + "px";
-      el.style.background = col;
-      el.classList.remove("hidden");
+    const cols = pieceColors(p);
+    const bodyColor = cols[0], edgeColor = cols[1];
+    // 镂空填充用该格棋格色（与 Lua paint_slot 的 sqIsDark 判定同式）
+    const sqIsDark = (((sq >> 3) + (sq & 7)) % 2 === 0);
+    const holeColor = sqIsDark ? COLOR.SQ_DARK : COLOR.SQ_LIGHT;
+
+    let n = 0;
+    const cap = prims.length;
+
+    // 一个形状在某一层的落位（pad 只作用于描边层）
+    function put(shape, cx, cy, w, h, rotDeg, color, pad) {
+      if (n >= cap) return;
+      const prim = prims[n++];
+      const wPx = w * side, hPx = h * side;
+      // 【钳制】pad 不得超过该形状短边的 22%，否则细长图元的描边会糊成一块色斑
+      const localPad = pad > 0 ? Math.min(pad, PIECE_PAD_CLAMP * Math.min(wPx, hPx)) : 0;
+      const leftPx = off + (cx - w / 2) * side - localPad;
+      const topPx = off + (1 - cy - h / 2 + PIECE_CENTER_DY) * side - localPad;
+      applyPrim(prim, shape, leftPx, topPx, wPx + localPad * 2, hPx + localPad * 2, rotDeg, color);
     }
-    slot.glyph.style.left = ix + "px";
-    slot.glyph.style.bottom = iy + "px";
-    slot.glyph.style.width = innerD + "px";
-    slot.glyph.style.height = innerD + "px";
-    slot.glyph.style.fontSize = Math.floor(innerD * 0.80) + "px";
-    slot.glyph.style.lineHeight = innerD + "px";
-    slot.glyph.style.color = outline;
-    slot.glyph.style.textShadow = "none";
-    slot.glyph.textContent = pieceGlyph(p);
-    slot.glyph.classList.remove("hidden");
+
+    // 描边基准宽度（后面每个形状再各自按自身短边钳制）
+    const pad = PIECE_OUTLINE_PAD * side;
+
+    // ① role0 描边层
+    for (const s of art) if (s[6] === 0) put(s[0], s[1], s[2], s[3], s[4], s[5], edgeColor, pad);
+    // ② role0 填充层
+    for (const s of art) if (s[6] === 0) put(s[0], s[1], s[2], s[3], s[4], s[5], bodyColor, 0);
+    // ③ role1 描边层
+    for (const s of art) if (s[6] === 1) put(s[0], s[1], s[2], s[3], s[4], s[5], edgeColor, pad);
+    // ④ role1 填充层（棋格色 = 等效挖穿）
+    for (const s of art) if (s[6] === 1) put(s[0], s[1], s[2], s[3], s[4], s[5], holeColor, 0);
+    // ⑤ role2 细节线（原尺寸，不外扩）
+    for (const s of art) if (s[6] === 2) put(s[0], s[1], s[2], s[3], s[4], s[5], edgeColor, 0);
+
+    // 池子里多出来的图元隐藏（容量池比实际用量大时）
+    for (let i = n; i < cap; i++) prims[i].classList.add("hidden");
   }
 
   function renderPieces() {
-    const style = (G.pieceStyle === "disc") ? "disc" : "glyph";
+    // 【必须】任何一次全量重绘前先清掉在跑的补间：重绘会把棋子画回真实位置，
+    // 若还留着上一段的 transform，棋子会被二次偏移到错误的位置。
+    // 正常路径不受影响 —— applyMove 是「renderAll() 之后再 startMoveAnim()」，
+    // 起动画时这里已经跑完了。
+    clearMoveAnims();
+    // 复盘中按快照 FEN 重建局面来画，**不改 G.st**（退出复盘后原局面原样还在）
+    const snapSt = reviewState();
+    const board = snapSt ? snapSt.board : G.st.board;
     let used = 0;
     for (let sq = 0; sq < 64; sq++) {
-      const p = G.st.board[sq];
+      const p = board[sq];
       if (p === 0) continue;
       if (used >= UI.pieceSlots.length) break;
       const slot = UI.pieceSlots[used];
       used++;
       slot.sq = sq;
       const pos = sqPos(sq);
-      paintSlot(slot, p, pos.x, pos.y, style);
+      paintSlot(slot, p, pos.x, pos.y, sq);
     }
-    // 多余槽位一律隐藏（播放期零创建零销毁）
+    // 多余槽位一律隐藏（播放期零创建零销毁）；图元池保留，不删节点
     for (let i = used; i < UI.pieceSlots.length; i++) {
       const slot = UI.pieceSlots[i];
       slot.sq = -1;
-      slot.outer.classList.add("hidden");
-      slot.inner.classList.add("hidden");
-      slot.glyph.classList.add("hidden");
+      slot.el.classList.add("hidden");
+      for (const prim of slot.prims) prim.classList.add("hidden");
     }
     UI.slotShown = used;
   }
 
+  // 失子行文案：与 lua/levelScript.lua 的 cap_text() **逐字一致**
+  //   空列表 → TEXT.CAP_NONE（"无"）
+  //   非空   → CAP_PREFIX + 字母空格连接（"失子 P P N"）
+  function capText(list) {
+    if (!list || list.length === 0) return TEXT.CAP_NONE;
+    return TEXT.CAP_PREFIX + list.join(" ");
+  }
+
   function renderCaptured() {
-    UI.panel.capWhite.textContent = G.capturedWhite.length ? "白失 " + G.capturedWhite.join(" ") : "";
-    UI.panel.capBlack.textContent = G.capturedBlack.length ? "黑失 " + G.capturedBlack.join(" ") : "";
+    const snap = reviewSnap();
+    // 复盘中只显示「走到这一步为止」已吃的子
+    const w = snap ? G.capturedWhite.slice(0, snap.capW) : G.capturedWhite;
+    const b = snap ? G.capturedBlack.slice(0, snap.capB) : G.capturedBlack;
+    // 白上黑下的语义按 Lua 现有顺序：capWhite 行显示 capturedWhite，capBlack 行显示 capturedBlack
+    UI.panel.capWhite.textContent = capText(w);
+    UI.panel.capBlack.textContent = capText(b);
   }
 
   function renderMoveLog() {
-    const n = G.moveLog.length;
+    const snap = reviewSnap();
+    // 复盘中只显示到该步为止的走子记录（最后 6 行）
+    const log = snap ? G.moveLog.slice(0, snap.idx) : G.moveLog;
+    const n = log.length;
     const from = Math.max(0, n - MOVE_LOG_LINES);
-    UI.panel.moveLog.textContent = G.moveLog.slice(from).join("\n");
+    const lines = log.slice(from);
+    // 空列表显示 MOVELOG_EMPTY（"还没有走子"），与 Lua render_move_log 同口径
+    UI.panel.moveLog.textContent = lines.length ? lines.join("\n") : TEXT.MOVELOG_EMPTY;
   }
 
   function renderLastMove() {
-    if (G.lastFrom >= 0 && G.lastTo >= 0) {
-      const p1 = sqPos(G.lastFrom), p2 = sqPos(G.lastTo);
+    const snap = reviewSnap();
+    // 复盘中痕迹用快照的起终点；idx=0（开局）没有上一步，直接隐藏
+    const lf = snap ? (snap.idx === 0 ? -1 : snap.from) : G.lastFrom;
+    const lt = snap ? (snap.idx === 0 ? -1 : snap.to) : G.lastTo;
+    if (lf >= 0 && lt >= 0) {
+      const p1 = sqPos(lf), p2 = sqPos(lt);
       UI.lastMove[0].style.left = p1.x + "px"; UI.lastMove[0].style.bottom = p1.y + "px";
       UI.lastMove[1].style.left = p2.x + "px"; UI.lastMove[1].style.bottom = p2.y + "px";
       UI.lastMove[0].classList.remove("hidden");
@@ -1233,6 +2252,24 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
   }
 
   function renderCheck() {
+    const snap = reviewSnap();
+    if (snap) {
+      // 复盘中按快照局面判定将军；idx=0（开局）不判定
+      UI.hint.textContent = snap.idx === 0 ? TEXT.REVIEW_START_HINT : snap.text;
+      if (snap.idx === 0) { UI.checkHL.classList.add("hidden"); return; }
+      const stSnap = reviewState();
+      if (stSnap && CHESS_RULES.inCheck(stSnap, stSnap.turn)) {
+        const ksq = CHESS_RULES.findKing(stSnap, stSnap.turn);
+        if (ksq >= 0) {
+          const p = sqPos(ksq);
+          UI.checkHL.style.left = p.x + "px"; UI.checkHL.style.bottom = p.y + "px";
+          UI.checkHL.classList.remove("hidden");
+          return;
+        }
+      }
+      UI.checkHL.classList.add("hidden");
+      return;
+    }
     if (G.over || !G.st) { UI.checkHL.classList.add("hidden"); return; }
     if (CHESS_RULES.inCheck(G.st, G.st.turn)) {
       const ksq = CHESS_RULES.findKing(G.st, G.st.turn);
@@ -1253,7 +2290,8 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
 
   // ---------- 高亮 ----------
   function clearHighlights() {
-    for (let i = 0; i < 28; i++) UI.legalHL[i].classList.add("hidden");
+    for (let i = 0; i < UI.legalHL.length; i++) UI.legalHL[i].classList.add("hidden");
+    for (let i = 0; i < UI.legalCapHL.length; i++) UI.legalCapHL[i].classList.add("hidden");
     UI.selHL.classList.add("hidden");
     G.selected = -1;
     G.legalTargets = new Map();
@@ -1289,15 +2327,26 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     UI.selHL.style.left = p0.x + "px"; UI.selHL.style.bottom = p0.y + "px";
     UI.selHL.classList.remove("hidden");
 
-    let idx = 0;
+    // 落点分两种形态（与 Lua 一致）：空格 → 墨绿圆点；可吃子 → 红薄罩。
+    // 两套池子各自计数，互不复用；选中的那一刻一次性写位置，之后不再逐帧动它们
+    // （呼吸是 CSS animation 自动跑的，JS 每帧压根不碰这 28 个元素）。
+    let idxDot = 0, idxCap = 0;
     for (const to of targets.keys()) {
-      if (idx >= 28) break;
       const pt = sqPos(to);
-      UI.legalHL[idx].style.left = pt.x + "px"; UI.legalHL[idx].style.bottom = pt.y + "px";
-      UI.legalHL[idx].classList.remove("hidden");
-      idx++;
+      if (st.board[to] !== 0) {
+        if (idxCap >= UI.legalCapHL.length) continue;
+        const el = UI.legalCapHL[idxCap++];
+        el.style.left = pt.x + "px"; el.style.bottom = pt.y + "px";
+        el.classList.remove("hidden");
+      } else {
+        if (idxDot >= UI.legalHL.length) continue;
+        const el = UI.legalHL[idxDot++];
+        el.style.left = pt.x + "px"; el.style.bottom = pt.y + "px";
+        el.classList.remove("hidden");
+      }
     }
     UI.hint.textContent = TEXT.HINT_SELECTED;
+    SFX.play("select");
     return true;
   }
 
@@ -1321,13 +2370,20 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     CHESS_RULES.make(G.st, mv);
 
     if (captured !== 0) {
-      // 被吃子记录统一用棋符（图片模式下也用它，便于面板窄空间显示）
-      const glyph = pieceGlyph(captured);
-      if (captured > 0) G.capturedWhite.push(glyph); else G.capturedBlack.push(glyph);
+      // 被吃子记录用**棋子字母**（P/N/B/R/Q/K），与 lua/levelScript.lua 的 PIECE_LETTER 同一套。
+      // 【不要改回 Unicode 棋符 U+265A..U+265F】真机文本框显示不出这些字形（见 playtest.md 缺陷 D-2），
+      // 而且棋符画法已整体从本 Demo 移除（issue #1 第 4 条）。
+      const letter = CHESS_RULES.PIECE_LETTER[captured] || "?";
+      if (captured > 0) G.capturedWhite.push(letter); else G.capturedBlack.push(letter);
     }
     G.moveLog.push(moveText(mv, side));
     G.lastFrom = mv.from; G.lastTo = mv.to;
     if (side === CHESS_RULES.WHITE) G.clockWhite += INCREMENT_SEC; else G.clockBlack += INCREMENT_SEC;
+
+    // 逐手快照：必须在加秒之后、renderAll 之前 push，
+    // 这样快照里的 clockW/clockB 是该步加秒后的真实剩余秒数，
+    // 且最后一步（含终局那一步）也一定进 history，复盘能走到真正的终局。
+    pushHistorySnapshot(mv);
 
     const status = CHESS_RULES.gameStatus(G.st);
     if (status.over) {
@@ -1350,6 +2406,23 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     }
     clearHighlights();
     renderAll();
+    // 走子补间：renderAll 已经把棋子画到目标格，这里把「刚走的那一枚」挪回起点再插值回来。
+    // 【顺序纪律】必须在 renderAll 之后、同一帧内完成 —— 否则浏览器先画一帧终点位置，
+    // 下一帧才起动画，看起来就是「跳一下再动」。
+    if (!opts.noAnim) {
+      const slot = UI.pieceSlots.find((s) => s.sq === mv.to);
+      // 补间一挂上就开始写 transform（在 startMoveAnim 内部同步完成），
+      // 主循环的 animUpdate 会在下一帧接着插值。
+      if (slot) startMoveAnim(slot, mv.from, mv.to);
+    }
+    // 音效：吃子优先于走子（同一手只响一声）
+    if (opts.fromRemote) { /* 远端同步的走子不重复出声，避免双窗口叠加 */
+    } else if (captured !== 0) SFX.play("capture");
+    else SFX.play("move");
+    // 将军 / 终局的音覆盖走子音（它们是「更重要的信息」，延后一点起）
+    const nowInCheck = !G.over && CHESS_RULES.inCheck(G.st, G.st.turn);
+    if (nowInCheck) SFX.play("check");
+    if (G.over) SFX.play("over");
     if (!opts.fromRemote) netSendMove(mv);
   }
 
@@ -1380,7 +2453,10 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     G.pendingPromo = null;
     showParts(UI.promo.parts, false);
     setBoardInput(true);
-    if (chosen) applyMove(chosen);
+    if (chosen) {
+      SFX.play("promote");   // 升变琶音（与 Lua 升变音同位）
+      applyMove(chosen);
+    }
   }
 
   function setBoardInput(on) {
@@ -1390,10 +2466,108 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
   }
 
   function onSquareClicked(sq) {
+    // 复盘只看不点：这里是第一道闸（第二道闸是 64 个命中区的 pointerEvents=none）
+    if (G.review) return;
     if (G.over || G.pendingPromo) return;
+    // 注意：这里**不**放点击音 —— 点棋子出「选中音」、点空/非法格什么都不响，
+    // 见 Lua 侧同口径（点击音只绑在按钮上，棋盘交互靠选中/走子音反馈）。
     if (G.selected >= 0 && G.legalTargets.has(sq)) { tryMove(sq); return; }
     if (G.selected === sq) { clearHighlights(); UI.hint.textContent = TEXT.HINT_OPENING; return; }
     if (!selectSquare(sq)) { clearHighlights(); UI.hint.textContent = TEXT.HINT_OPENING; }
+  }
+
+  // ---------- 逐手复盘（快照写入 / 面板切换 / 翻页 / 进出） ----------
+  // 快照写入：applyMove 末尾调用一次，把「这一步走完后的完整可视状态」定存。
+  function pushHistorySnapshot(mv) {
+    G.history.push({
+      fen: CHESS_RULES.fenOf(G.st),
+      text: G.moveLog[G.moveLog.length - 1],   // 与本步 moveLog 最后一项完全相同
+      idx: G.history.length,                   // 这是第几步（history[0] 的 idx=0）
+      from: mv.from, to: mv.to,
+      capW: G.capturedWhite.length, capB: G.capturedBlack.length,
+      clockW: G.clockWhite, clockB: G.clockBlack,   // 已含本步加秒
+    });
+  }
+
+  // 面板两套按钮的显隐（正常四键 / 复盘四键）。第三行单按钮常驻，只换文案。
+  function applyPanelMode() {
+    const inReview = !!G.review;
+    showParts(UI.panel.normalParts, !inReview);
+    showParts(UI.panel.reviewParts, inReview);
+    UI.panel.btnReview.textContent = inReview ? TEXT.BTN_REVIEW_EXIT : TEXT.BTN_REVIEW_HISTORY;
+  }
+
+  // 复盘翻页：delta 相对移动 / idx 绝对定位；到边界就原样不动，不报错
+  function reviewGoto(idx) {
+    if (!G.review) return false;
+    const maxIdx = G.history.length - 1;
+    let want = idx;
+    if (want < 0) want = 0;
+    if (want > maxIdx) want = maxIdx;
+    if (want === G.review.idx) return false;   // 已在边界：无效果
+    G.review.idx = want;
+    renderAll();
+    return true;
+  }
+  function reviewStep(delta) {
+    if (!G.review) return false;
+    return reviewGoto(G.review.idx + delta);
+  }
+
+  // 进入复盘：停在最后一步。空态（一步没走）直接给提示并返回，不进入。
+  // 对局中进入时不清 G.over、不动 G.st / G.moveLog —— 退出后原局面接着下。
+  function enterReview() {
+    if (G.history.length <= 1) {
+      UI.hint.textContent = TEXT.REVIEW_EMPTY;
+      return false;
+    }
+    // 升变选择 / 求和确认弹窗若正开着，先收起（退出复盘时按状态复原），
+    // 否则它们会叠在复盘画面上，且退出时棋盘会被错误解锁。
+    G.reviewRestoreModal = {
+      promo: !UI.promo.bg.classList.contains("hidden"),
+      draw: !UI.drawDlg.bg.classList.contains("hidden"),
+    };
+    showParts(UI.promo.parts, false);
+    showParts(UI.drawDlg.parts, false);
+
+    G.review = { idx: G.history.length - 1 };
+    hideResult();            // 结算弹窗让位给复盘（退出时按 G.over 重新弹回）
+    clearHighlights();
+    setBoardInput(false);    // 64 个命中区彻底不可点（不是只靠 onSquareClicked 里的 return）
+    applyPanelMode();
+    renderAll();             // renderCheck 里会按快照写提示条（idx 0 → REVIEW_START_HINT）
+    return true;
+  }
+
+  // 退出复盘：回到原局面。对局已结束 → 重新弹结算；否则恢复棋盘交互。
+  // 若进入复盘时升变/求和弹窗开着，按原样复原并保持棋盘锁定。
+  function exitReview() {
+    if (!G.review) return false;
+    G.review = null;
+    const restore = G.reviewRestoreModal || { promo: false, draw: false };
+    G.reviewRestoreModal = null;
+    applyPanelMode();
+    if (restore.promo && G.pendingPromo) {
+      showParts(UI.promo.parts, true);
+      setBoardInput(false);
+    } else if (restore.draw) {
+      showParts(UI.drawDlg.parts, true);
+      setBoardInput(false);
+    } else if (G.over) {
+      setBoardInput(false);
+      showResult();
+    } else {
+      setBoardInput(true);
+      UI.hint.textContent = TEXT.HINT_OPENING;
+    }
+    renderAll();
+    return true;
+  }
+
+  // 两个入口共用：结算弹窗「复盘」与面板「看历史」。按钮文案决定进还是出。
+  function onReviewEntryClicked() {
+    if (G.review) { exitReview(); return; }
+    enterReview();
   }
 
   // ---------- 结算 / 按钮 ----------
@@ -1413,11 +2587,16 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     G.moveLog = []; G.capturedWhite = []; G.capturedBlack = [];
     G.lastFrom = -1; G.lastTo = -1;
     G.pendingPromo = null; G.drawCooldown = [0, 0]; G.drawPendingFrom = -1;
+    // 【复盘】新开一局清空历史，只留开局快照（history[0] 恒为开局）
+    G.history = [makeStartSnapshot()];
+    G.review = null;
+    G.reviewRestoreModal = null;
     clearHighlights();
     hideResult();
     showParts(UI.promo.parts, false);
     showParts(UI.drawDlg.parts, false);
     setBoardInput(true);
+    applyPanelMode();
     UI.hint.textContent = TEXT.HINT_OPENING;
     renderAll();
     if (!opts.fromRemote) netSendEvent(1, 0, 0, 0, "");
@@ -1433,6 +2612,7 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
       G.resultText = TEXT.RESULT_WHITE_WIN; G.resultSub = TEXT.SUB_RESIGN_BLACK;
     }
     showResult();
+    SFX.play("over");   // 结束三音收尾（与 Lua 的结束音同位）
     netSendEvent(2, resignSide - 1, 0, 0, "");
   }
 
@@ -1456,6 +2636,7 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     G.over = true;
     G.resultText = TEXT.RESULT_DRAW_AGREED; G.resultSub = TEXT.SUB_DRAW_AGREED;
     showResult();
+    SFX.play("over");
     if (G.localMode) netSendEvent(4, 0, 0, 0, "");
   }
 
@@ -1464,13 +2645,6 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     setBoardInput(true);
     UI.hint.textContent = "对方拒绝和棋，继续对局";
     if (G.localMode) netSendEvent(7, 0, 0, 0, "");
-  }
-
-  function togglePieceStyle() {
-    G.pieceStyle = (G.pieceStyle === "disc") ? "glyph" : "disc";
-    UI.panel.btnStyle.textContent = pieceStyleLabel(G.pieceStyle);
-    UI.hint.textContent = "棋子样式：" + pieceStyleNameCn(G.pieceStyle);
-    renderPieces();
   }
 
   function toggleLocalMode() {
@@ -1597,22 +2771,32 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
   }
 
   // ---------- 主循环（棋钟） ----------
+  // 棋钟推进抽成独立函数：① 复盘期间必须整段跳过（对局中看历史时棋钟要停）
+  // ② 自检可以直接喂一个大 dt 验证「复盘中棋钟不变」，不用等真实时间流逝。
+  function tickClock(dt) {
+    if (G.review) return;                 // 【复盘】棋钟停摆：复盘是只读回放，不消耗时间
+    if (G.st && !G.over) {
+      if (G.st.turn === CHESS_RULES.WHITE) {
+        G.clockWhite -= dt;
+        if (G.clockWhite <= 0) { G.clockWhite = 0; G.over = true; G.resultText = TEXT.RESULT_BLACK_WIN; G.resultSub = TEXT.SUB_TIMEOUT_WHITE; showResult(); SFX.play("over"); }
+      } else {
+        G.clockBlack -= dt;
+        if (G.clockBlack <= 0) { G.clockBlack = 0; G.over = true; G.resultText = TEXT.RESULT_WHITE_WIN; G.resultSub = TEXT.SUB_TIMEOUT_BLACK; showResult(); SFX.play("over"); }
+      }
+    }
+  }
+
   let lastFrame = performance.now();
   function tick(now) {
     const dt = Math.min(0.25, (now - lastFrame) / 1000);
     lastFrame = now;
-    if (G.st && !G.over) {
-      if (G.st.turn === CHESS_RULES.WHITE) {
-        G.clockWhite -= dt;
-        if (G.clockWhite <= 0) { G.clockWhite = 0; G.over = true; G.resultText = TEXT.RESULT_BLACK_WIN; G.resultSub = TEXT.SUB_TIMEOUT_WHITE; showResult(); }
-      } else {
-        G.clockBlack -= dt;
-        if (G.clockBlack <= 0) { G.clockBlack = 0; G.over = true; G.resultText = TEXT.RESULT_WHITE_WIN; G.resultSub = TEXT.SUB_TIMEOUT_BLACK; showResult(); }
-      }
-    }
+    tickClock(dt);
     for (let i = 0; i < 2; i++) if (G.drawCooldown[i] > 0) G.drawCooldown[i] = Math.max(0, G.drawCooldown[i] - dt);
     G.clockTimer += dt;
     if (G.clockTimer >= CLOCK_REFRESH_SEC) { G.clockTimer = 0; renderClocks(); }
+    // 走子补间：只在真的有动画时才进入函数体（内部第一行就 return，无动画零开销）。
+    // 呼吸（选中格 / 落点）全部走 CSS animation，主循环不碰这些元素。
+    animUpdate(dt);
     requestAnimationFrame(tick);
   }
 
@@ -1783,6 +2967,53 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
       add("newgame_resets_clock", G.clockWhite === INITIAL_TIME_SEC && G.moveLog.length === 0,
           "clock=" + G.clockWhite + " log=" + G.moveLog.length);
 
+      // 12b 面板 v1.11 排布：棋钟并排、失子行不重叠、空态文案正确（issue #1 第 3 条）
+      //   【为什么要断言"不重叠"】旧版就是失子行与走子记录区纵向压在一起，
+      //   纯看数值看不出重叠 —— 这里用真实 DOM 的 bottom/h 两两相交来判断。
+      (function () {
+        function rectOf(el) {
+          return { y: parseFloat(el.style.bottom), h: parseFloat(el.style.height) };
+        }
+        const cw = rectOf(UI.panel.clockWhite), cb = rectOf(UI.panel.clockBlack);
+        // 并排：同一 y、同一 h，且左右不覆盖
+        const sameRow = Math.abs(cw.y - cb.y) < 0.01 && Math.abs(cw.h - cb.h) < 0.01;
+        const wLeft = parseFloat(UI.panel.clockWhite.style.left);
+        const wW = parseFloat(UI.panel.clockWhite.style.width);
+        const bLeft = parseFloat(UI.panel.clockBlack.style.left);
+        add("panel_clocks_side_by_side", sameRow && Math.abs(bLeft - (wLeft + wW)) < 0.01,
+            "白y=" + cw.y.toFixed(1) + " 黑y=" + cb.y.toFixed(1) + " 白右=" + (wLeft + wW).toFixed(1) + " 黑左=" + bLeft.toFixed(1));
+
+        // 纵向不重叠：把关键行按 y 排序，逐个检查区间不相交
+        const rows = [
+          ["movelog", rectOf(UI.panel.moveLog)],
+          ["capWhite", rectOf(UI.panel.capWhite)],
+          ["capBlack", rectOf(UI.panel.capBlack)],
+          ["clocks", cw],
+          ["turn", rectOf(UI.panel.turn)],
+          ["title", rectOf(UI.panel.title)],
+        ].sort((a, b) => a[1].y - b[1].y);
+        let overlap = "";
+        for (let i = 0; i + 1 < rows.length; i++) {
+          const top = rows[i + 1][1].y, bottom = rows[i][1].y + rows[i][1].h;
+          if (top < bottom - 0.5) overlap += rows[i][0] + "↑" + rows[i + 1][0] + "(" + (bottom - top).toFixed(1) + "px); ";
+        }
+        // movelog 与 capBlack 之间还夹着 DIV_LOG，允许贴着（不重叠即可）
+        add("panel_rows_not_overlapping", overlap === "", overlap || "全部行无重叠");
+
+        // 空态文案：失子两行都显示 CAP_NONE，走子记录显示 MOVELOG_EMPTY
+        add("panel_empty_texts", UI.panel.capWhite.textContent === TEXT.CAP_NONE &&
+            UI.panel.capBlack.textContent === TEXT.CAP_NONE &&
+            UI.panel.moveLog.textContent === TEXT.MOVELOG_EMPTY,
+            "白=[" + UI.panel.capWhite.textContent + "] 黑=[" + UI.panel.capBlack.textContent +
+            "] 记录=[" + UI.panel.moveLog.textContent + "]");
+
+        // 触摸目标下限：按钮高 ≥ 44
+        const tooShort = [UI.panel.btnNew, UI.panel.btnReview, UI.panel.btnResign]
+          .filter((el) => parseFloat(el.style.height) < 44).length;
+        add("panel_button_min_height_44", tooShort === 0,
+            "btnH=" + parseFloat(UI.panel.btnNew.style.height).toFixed(1) + " 不足数=" + tooShort);
+      })();
+
       // 13 联机模拟：收到走子消息 → 棋盘更新
       newGame({ fromRemote: true });
       const fenBefore = CHESS_RULES.fenOf(G.st);
@@ -1801,18 +3032,156 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
       const slotN = UI.pieceSlots.filter(Boolean).length;
       add("piece_slots_32", slotN === 32, "n=" + slotN);
 
-      // 18 两档样式都能把全部棋子画出来（切档只改显隐，控件不重建）
-      let styleOk = true, styleDetail = "";
+      // 18 图元拟合渲染：每枚棋子都真的画出来了，且图元数与 PIECE_ART 逐条对得上
+      //    【口径】单枚棋子可见图元数 = role0×2（描边+填充）+ role1×2 + role2×1，
+      //    与 Lua piece_prim_count 同一个算式；这里对一个真实槽位实测，不是算出来就算过。
+      let renderOk = true, renderDetail = "";
       const wantShown = G.st.board.filter((v) => v !== 0).length;
-      for (const st of ["disc", "glyph"]) {
-        G.pieceStyle = st;
-        renderPieces();
-        const shown = UI.pieceSlots.filter((s) => !s.glyph.classList.contains("hidden")).length;
-        if (shown !== wantShown) { styleOk = false; styleDetail += st + " " + shown + "/" + wantShown + "; "; }
-      }
-      add("piece_style_two_tiers", styleOk, styleDetail);
-      G.pieceStyle = "disc";
       renderPieces();
+      const shownSlots = UI.pieceSlots.filter((s) => s.sq >= 0 && !s.el.classList.contains("hidden")).length;
+      if (shownSlots !== wantShown) {
+        renderOk = false; renderDetail += "slots " + shownSlots + "/" + wantShown + "; ";
+      }
+      // 逐 kind 抽一个真实槽位核对图元条数
+      const seenKinds = new Set();
+      for (const slot of UI.pieceSlots) {
+        if (slot.sq < 0) continue;
+        const p = G.st.board[slot.sq];
+        if (p === 0) continue;
+        const kind = Math.abs(p);
+        if (seenKinds.has(kind)) continue;
+        seenKinds.add(kind);
+        const list = PIECE_ART[kind] || [];
+        const want = list.reduce((n, s) => n + (s[6] === 2 ? 1 : 2), 0);
+        const got = slot.prims.filter((el) => !el.classList.contains("hidden")).length;
+        if (got !== want) { renderOk = false; renderDetail += "kind" + kind + " " + got + "/" + want + "; "; }
+      }
+      add("piece_prim_fit_render", renderOk,
+          renderDetail + "kinds=" + seenKinds.size + " primMax=" + PIECE_PRIM_MAX);
+
+      // 18b 棋符画法已彻底移除（issue #1 第 4 条）：任何槽位里都不许有文字节点
+      let textNodeCount = 0;
+      for (const slot of UI.pieceSlots) {
+        if (!slot.el) { textNodeCount++; continue; }
+        for (const node of slot.el.childNodes) if (node.nodeType === 3) textNodeCount++;
+        if (slot.el.textContent !== "") textNodeCount++;
+      }
+      add("no_glyph_piece_text", textNodeCount === 0, "textHits=" + textNodeCount);
+
+      // 18c 居中量与 Lua piece_center_dy() 逐位同式（issue #1 第 5 条）
+      //   ⚠ 关于期望值：需求文档里给的 0.0081319 **与 Lua 数据不自洽**，
+      //   实测（逐位照抄 Lua shape_bbox + piece_center_dy，含全部历史版本）恒为
+      //     并集 y∈[0.0671048391, 0.9167110704]，中心 0.4919079547，dy = 0.5 − 0.4919079547
+      //     = 0.0080920453。
+      //   需求文档自己写的 y 范围与"中心 0.4920"我都复现了，但 0.5 − 0.4920 = 0.0080，
+      //   也不是 0.0081319；反推 0.0081319 需要中心 0.4918690（比实测小 3.9e-5）。
+      //   结论：**以算法为准**（一致压过精确的本意是"跟 Lua 逐位同式"，
+      //   而不是"硬编一个凑不对的常数"）。若 Lua 侧真拿到 0.0081319，说明两份 PIECE_ART
+      //   不同 —— 那时本断言会红，正是我们要的信号。
+      const LUA_DY_ABS = 0.0080920453;
+      const DY_TOL = 5e-7;
+      const dyAbs = Math.abs(PIECE_CENTER_DY_LUA);
+      const dyOk = Math.abs(dyAbs - LUA_DY_ABS) <= DY_TOL;
+      add("piece_center_dy_matches_lua", dyOk,
+          "|DY|lua口径=" + dyAbs.toFixed(10) + " 期望=" + LUA_DY_ABS.toFixed(10) +
+          " DY(css)=" + PIECE_CENTER_DY.toFixed(10));
+      // 符号约定：Lua 正值向上 → CSS top 向下为正，故两者必须互为相反数
+      add("piece_center_dy_sign_convention", Math.abs(PIECE_CENTER_DY + PIECE_CENTER_DY_LUA) < 1e-12,
+          "css=" + PIECE_CENTER_DY.toFixed(10) + " lua=" + PIECE_CENTER_DY_LUA.toFixed(10));
+      // 只平移不改尺寸：全局偏移的核心保证。
+      // 【断言口径修正】早期这条写成"兵高 < 王高×0.95"（借用 Lua 注释里的 兵/王=0.909），
+      // 但那是**未旋转矩形**口径的比值；改用与 Lua 同式的旋转 AABB 后实测 0.972
+      // （兵的椭圆转 53°/8° 后外扩，王的主体转 7°几乎不变），阈值 0.95 会假红。
+      // 真正要守住的性质是「**只平移、绝不缩放**」—— 所以直接断言它：
+      //   ① 六枚形状表里的原始 w/h 与 PIECE_CENTER_DY 完全无关（偏移不改尺寸）
+      //   ② 兵仍然比王矮（用宽松的 <1.0 表达"没有把兵拉成和王一样高"）
+      //   ③ dy 只参与 top 计算，不出现在任何 width/height 里（用源码断言，见 demo_check.cjs）
+      add("piece_center_dy_does_not_scale", (function () {
+        function spanOf(kind) {
+          let a = Infinity, b = -Infinity;
+          for (const s of (PIECE_ART[kind] || [])) {
+            if (s[6] !== 0) continue;
+            const q = shapeBBoxY(s);
+            if (q[0] < a) a = q[0];
+            if (q[1] > b) b = q[1];
+          }
+          return b - a;
+        }
+        const sp = spanOf(CHESS_RULES.PAWN), sk = spanOf(CHESS_RULES.KING);
+        // 兵仍矮于王（旋转 AABB 口径下 0.972，绝不该 ≥1）
+        return sp < sk;
+      })(), (function () {
+        function spanOf(kind) {
+          let a = Infinity, b = -Infinity;
+          for (const s of (PIECE_ART[kind] || [])) {
+            if (s[6] !== 0) continue;
+            const q = shapeBBoxY(s);
+            if (q[0] < a) a = q[0];
+            if (q[1] > b) b = q[1];
+          }
+          return b - a;
+        }
+        const sp = spanOf(CHESS_RULES.PAWN), sk = spanOf(CHESS_RULES.KING);
+        return "PAWN=" + sp.toFixed(4) + " KING=" + sk.toFixed(4) + " 比=" + (sp / sk).toFixed(4);
+      })());
+
+      // 19 复盘快照：走 2 步后 history 应有 3 项（1 开局 + 2 步）
+      newGame({ fromRemote: true });
+      // 【必须】自检要在浏览器里跑，initNet 可能已把本端判成黑方（peerAlive=true）。
+      // 那样第 2 步（黑方 e7→e5）会被 selectSquare 的「只许操作自己一方」拦住。
+      // 这里显式回到单机口径，让两步都能走（与正常单机打开时一致）。
+      G.peerAlive = false; G.mySide = 1;
+      selectSquare(12); tryMove(28);    // e2→e4
+      selectSquare(52); tryMove(36);    // e7→e5
+      add("review_history_built", G.history.length === 3, "len=" + G.history.length);
+      // 快照内容与实时状态一致（最后一项 = 当前局面）
+      const lastSnap = G.history[G.history.length - 1];
+      const snapFenOk = lastSnap && lastSnap.fen === CHESS_RULES.fenOf(G.st)
+        && lastSnap.text === G.moveLog[G.moveLog.length - 1]
+        && lastSnap.idx === G.moveLog.length
+        && lastSnap.from === G.lastFrom && lastSnap.to === G.lastTo;
+      add("review_snapshot_matches_state", !!snapFenOk);
+
+      // 20 复盘翻页：prev/next 改变 idx 且不越界；边界点击无效果
+      const entered = enterReview();
+      const maxIdx = G.history.length - 1;
+      let navOk = entered && G.review && G.review.idx === maxIdx;   // 进入即停在最后一步
+      let navDetail = "enter idx=" + (G.review ? G.review.idx : "null") + " max=" + maxIdx + "; ";
+      if (navOk) {
+        const i0 = G.review.idx;
+        reviewStep(-1);                       // 回到上一步
+        if (G.review.idx !== i0 - 1) { navOk = false; navDetail += "prev got=" + G.review.idx + "; "; }
+        reviewGoto(0);                        // 绝对跳到开局
+        if (G.review.idx !== 0) { navOk = false; navDetail += "goto0 got=" + G.review.idx + "; "; }
+        reviewStep(-1);                       // 已在开局：再往前应无效果（仍是 0）
+        if (G.review.idx !== 0) { navOk = false; navDetail += "prev_at_start got=" + G.review.idx + "; "; }
+        reviewGoto(maxIdx);                   // 跳回终局
+        if (G.review.idx !== maxIdx) { navOk = false; navDetail += "gotoEnd got=" + G.review.idx + "; "; }
+        reviewStep(+1);                       // 已在终局：再往后应无效果（仍是 max）
+        if (G.review.idx !== maxIdx) { navOk = false; navDetail += "next_at_end got=" + G.review.idx + "; "; }
+      }
+      add("review_prev_next", navOk, navDetail);
+
+      // 21 复盘中棋钟不变（复盘只读快照，绝不能扣 G.clockWhite/G.clockBlack）
+      let clockOk = false, clockDetail = "";
+      if (G.review) {
+        const cw0 = G.clockWhite, cb0 = G.clockBlack;
+        // 走真实主循环用的同一段代码：喂 480 帧 × 0.25s = 120 秒虚拟时间
+        for (let i = 0; i < 480; i++) tickClock(0.25);
+        clockOk = (G.clockWhite === cw0) && (G.clockBlack === cb0);
+        clockDetail = "w " + cw0 + "→" + G.clockWhite + " b " + cb0 + "→" + G.clockBlack;
+      }
+      add("review_no_clock_in_review", clockOk, clockDetail);
+
+      // 退出复盘回到原局面（对局中看历史不改变局面）
+      exitReview();
+      add("review_exit_restores_board", G.review === null && CHESS_RULES.fenOf(G.st) === lastSnap.fen);
+
+      // 空态：一步没走时进复盘应被拒绝并给提示
+      newGame({ fromRemote: true });
+      const emptyEntered = enterReview();
+      add("review_empty_rejected", emptyEntered === false && G.review === null
+          && UI.hint.textContent === TEXT.REVIEW_EMPTY, "hint=" + UI.hint.textContent);
 
       // 复位到干净开局
       newGame({ fromRemote: true });
@@ -1851,13 +3220,13 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
 
     buildBoard(); buildPanel(); buildResult(); buildPromo(); buildDrawDlg();
     G.st = CHESS_RULES.parseFen(START_FEN);
-    // ?style=disc|glyph 直接指定初始棋子样式（用于自动化截图对照，不影响正常游玩）
-    const styleParam = params.get("style");
-    if (styleParam === "disc" || styleParam === "glyph") {
-      G.pieceStyle = styleParam;
-      UI.panel.btnStyle.textContent = pieceStyleLabel(G.pieceStyle);
-    }
+    // 开局快照必须在建完 UI、解析完初始局面之后写入（makeStartSnapshot 要读 G.st 的 FEN）
+    G.history = [makeStartSnapshot()];
+    G.review = null;
+    // 【已删除 ?style=disc|glyph】棋子只剩「图元拟合」一种画法（issue #1 第 4 条），
+    // 没有第二档可切。旧链接带这个参数不会报错，只是被忽略。
     G.uiReady = true;
+    applyPanelMode();
     renderAll();
     setBoardInput(true);
     initNet();

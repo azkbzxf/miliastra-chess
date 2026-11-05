@@ -1,0 +1,29 @@
+=== 国际象棋 · issue #1 静态不变量检查（tests/static_checks.cjs）===
+工作目录: D:\输出目录\国际象棋
+时间: 2026-11-05T11:55:02.607Z
+node: v24.19.0
+
+     · lua/levelScript.lua：5369 行 / 234906 字节
+     · sim/levelScript.lua：5372 行 / 235131 字节
+     · out/交付包/levelScript.lua：5369 行 / 234906 字节
+
+PASS CHECK-0 无同作用域 local function 重复定义（静默覆盖）: 121 个 local function 名字，按 AST 作用域分组后无重名
+PASS CHECK-1 语法三份均可 Lua 5.3 解析: luaparse Lua 5.3｜lua/levelScript.lua ✓，sim/levelScript.lua ✓，out/交付包/levelScript.lua ✓
+PASS CHECK-2 三份文件一致（剥注释/索引行后逐行相同）: 三份一致（各 3879 行有效代码；已剥注释与 4 个模板索引行）
+PASS CHECK-3 无棋影（paint_slot 内无阴影绘制）: paint_slot 函数体已无阴影绘制｜提示：其余位置仍有 PIECE_SHADOW 定义（第 192 行，属 COLOR/CONFIG 历史字段，函数体内不得引用）
+PASS CHECK-4 图元旋转无条件写入（image_apply）: image_apply 语义已无条件写：① 无 rot/0/nil 守卫；② 归一化 r = rot or 0；③ 写入 SetLocalRotation(0, 0, r)
+PASS CHECK-5 落点高亮按格中心（select_square）: 落点高亮按格中心定位：① 两分支同一对实参「cx, cy」；② cx = tx + 半格、cy = ty + 半格；③ hlBase 记 cx/cy（2 处）
+PASS CHECK-6 面板纵向区间两两不相交（build_panel）: [PANEL_LAYOUT] 9 项两两不相交（分隔线跳过 2 条）｜音效行 pc-16-9: h=54.8px y=31.6 间隙61.8px ✓；mobile-16-9: h=44.0px(44px兜底) y=25.1 间隙49.4px ✓｜REVIEW_TOGGLE[0.070,0.148] BTN_ROW2[0.163,0.241] BTN_ROW1[0.255,0.333] MOVE_LOG[0.360,0.578] CAP_BLACK[0.600,0.650] CAP_WHITE[0.660,0.710] CLOCKS[0.730,0.818] TURN[0.828,0.890] TITLE[0.900,0.985]
+PASS CHECK-7 图元预算自洽（PIECE_PRIM_BUDGET vs PIECE_ART）: 预算 64 ≥ 单枚最大 34（ROOK）｜PAWN=12(r0×6/r1×0/r2×0)，KNIGHT=28(r0×14/r1×0/r2×0)，BISHOP=20(r0×10/r1×0/r2×0)，ROOK=34(r0×17/r1×0/r2×0)，QUEEN=34(r0×17/r1×0/r2×0)，KING=20(r0×10/r1×0/r2×0)
+
+=== 汇总 ===
+  PASS CHECK-0 无同作用域 local function 重复定义（静默覆盖）
+  PASS CHECK-1 语法三份均可 Lua 5.3 解析
+  PASS CHECK-2 三份文件一致（剥注释/索引行后逐行相同）
+  PASS CHECK-3 无棋影（paint_slot 内无阴影绘制）
+  PASS CHECK-4 图元旋转无条件写入（image_apply）
+  PASS CHECK-5 落点高亮按格中心（select_square）
+  PASS CHECK-6 面板纵向区间两两不相交（build_panel）
+  PASS CHECK-7 图元预算自洽（PIECE_PRIM_BUDGET vs PIECE_ART）
+
+结果: 8/8 全部通过 → 退出码 0

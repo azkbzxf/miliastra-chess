@@ -1,0 +1,37 @@
+导出 HEAD 的 levelScript.lua → C:\Users\24037\AppData\Local\Temp\chess-baseline-QIf0t0
+  ✓ lua/levelScript.lua  216290 字节
+  ✓ sim/levelScript.lua  216515 字节
+  ✓ out/交付包/levelScript.lua  216290 字节
+
+=== 国际象棋 · issue #1 静态不变量检查（tests/static_checks.cjs）===
+工作目录: C:\Users\24037\AppData\Local\Temp\chess-baseline-QIf0t0
+时间: 2026-11-05T11:55:03.107Z
+node: v24.19.0
+
+     · lua/levelScript.lua：5006 行 / 216290 字节
+     · sim/levelScript.lua：5009 行 / 216515 字节
+     · out/交付包/levelScript.lua：5006 行 / 216290 字节
+
+PASS CHECK-0 无同作用域 local function 重复定义（静默覆盖）: 112 个 local function 名字，按 AST 作用域分组后无重名
+PASS CHECK-1 语法三份均可 Lua 5.3 解析: luaparse Lua 5.3｜lua/levelScript.lua ✓，sim/levelScript.lua ✓，out/交付包/levelScript.lua ✓
+PASS CHECK-2 三份文件一致（剥注释/索引行后逐行相同）: 三份一致（各 3676 行有效代码；已剥注释与 4 个模板索引行）
+FAIL CHECK-3 无棋影（paint_slot 内无阴影绘制）: paint_slot 内仍有 9 处阴影痕迹 → 第 3085 行: local shadow = take()；第 3086 行: if shadow ~= nil then；第 3087 行: local sw = sside * CONFIG.PIECE_SHADOW_W；第 3088 行: local sh = sside * CONFIG.PIECE_SHADOW_H；第 3089 行: image_apply(shadow, prim_asset(1), CONFIG.COLOR.PIECE_SHADOW, 0)；第 3090 行: shadow:SetSizeDelta(sw, sh)；第 3091 行: shadow:SetAnchoredPosition(ox + sside * 0.5,；第 3092 行: oy + sside * CONFIG.PIECE_SHADOW_DY)；第 3093 行: ui_set_active(shadow, true)
+FAIL CHECK-4 图元旋转无条件写入（image_apply）: image_apply（第 1656 行）未满足语义判据：① 仍存在「用 rot 决定是否写入」的守卫：rot 与 0 比较「rot ~= 0」、rot 与 nil 比较「rot ~= nil」、if rot（真值守卫）「if rot」；② 缺少归一化 `local r = rot or 0`（rot 为 nil 时必须当 0 写）
+FAIL CHECK-5 落点高亮按格中心（select_square）: 落点高亮仍用左下角补偿式「(L.cell - d) / 2」（legalHL 块第 4026 行起）→ pivot=0.5 的图片控件会整体偏左下
+FAIL CHECK-6 面板纵向区间两两不相交（build_panel）: 2 处纵向重叠 → capblack[0.460,0.510] × movelogbg[0.338,0.473] 重叠 0.0130；capblack[0.460,0.510] × movelog[0.340,0.480] 重叠 0.0200｜参与判定 17 行: paneltitle[0.900,0.980] panelturnbg[0.805,0.870] panelturn[0.810,0.870] clockwhitebg[0.698,0.783] clockblackbg[0.598,0.683] clockwhite[0.700,0.790] clockblack[0.600,0.690] capwhite[0.520,0.570] capblack[0.460,0.510] movelogbg[0.338,0.473] movelog[0.340,0.480] btnnew[0.240,0.320] btnresign[0.240,0.320] btndraw[0.150,0.230] btnlocal[0.150,0.230] btnreviewtoggle[0.060,0.140] btnsfx[-0.082,-0.020]
+PASS CHECK-7 图元预算自洽（PIECE_PRIM_BUDGET vs PIECE_ART）: 预算 64 ≥ 单枚最大 34（ROOK）｜PAWN=12(r0×6/r1×0/r2×0)，KNIGHT=28(r0×14/r1×0/r2×0)，BISHOP=20(r0×10/r1×0/r2×0)，ROOK=34(r0×17/r1×0/r2×0)，QUEEN=34(r0×17/r1×0/r2×0)，KING=20(r0×10/r1×0/r2×0)
+
+=== 汇总 ===
+  PASS CHECK-0 无同作用域 local function 重复定义（静默覆盖）
+  PASS CHECK-1 语法三份均可 Lua 5.3 解析
+  PASS CHECK-2 三份文件一致（剥注释/索引行后逐行相同）
+  FAIL CHECK-3 无棋影（paint_slot 内无阴影绘制）
+  FAIL CHECK-4 图元旋转无条件写入（image_apply）
+  FAIL CHECK-5 落点高亮按格中心（select_square）
+  FAIL CHECK-6 面板纵向区间两两不相交（build_panel）
+  PASS CHECK-7 图元预算自洽（PIECE_PRIM_BUDGET vs PIECE_ART）
+
+结果: 4/8 通过，4 项失败 → 退出码 1
+失败项: CHECK-3, CHECK-4, CHECK-5, CHECK-6
+
+临时基线目录已删除（加 --keep 可保留：C:\Users\24037\AppData\Local\Temp\chess-baseline-QIf0t0）

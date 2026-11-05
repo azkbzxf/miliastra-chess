@@ -102,37 +102,96 @@ if (textDiffs.length) textDiffs.forEach(d => console.log("  TEXT_DIFF " + d));
 //   ③ 硬编码 luaVals.length === 5，且靠 Object.values() 的声明顺序配对
 //      （Lua 小写键名 vs Demo 驼峰键名，顺序一旦不同就全错位）。
 // 现在改成：三种形态都抓 + 按【语义键名】配平，不再依赖数量与声明顺序。
-// Lua: atX(0.04)/atY(0.24)；Demo: atX(0.04)/atY(0.24) 或 { x: atX(...), y: atY(...) }
+//
+// 【v1.11 再修】布局来源从「字面量 atY(0.24)」改成「布局表驱动」：
+//   Lua  `CONFIG.PANEL_LAYOUT = { BTN_ROW1 = {0.255, 0.078}, ... }` + `local row1Y = py + ph * PL.BTN_ROW1.y`
+//   Demo `const PL = { BTN_ROW1: [0.255, 0.078], ... }` + `btnSpecs` 里用 `row1Y`
+// 于是「按钮的 y」在两边都不再是字面量，必须**先解析布局表**再解析按钮引用。
+// 判据因此升级为两层：
+//   ① 布局表本身必须逐项相等（PANEL_LAYOUT 九项，这是真正的「单一事实来源」）；
+//   ② 每个按钮引用的槽名 + x 必须两边一致（槽名对上了，y 就由 ① 保证）。
+// 这样即使以后再把 atY 改成别的写法，只要布局表还在，这条检查就不会失效。
 const luaBtns = {};
-// 形态 A：直写（name = "btnXxx", parent = ..., x = atX(a), y = atY(b)）
-for (const m of luaSrc.matchAll(/name = "(btn\w+)", parent = [^,]+,[\s\S]{0,160}?x = atX\(([\d.]+)\), y = atY\(([\d.]+)\)/g)) {
-  luaBtns[m[1]] = { x: m[2], y: m[3] };
+
+// —— ① 解析 Lua CONFIG.PANEL_LAYOUT ——
+// 【注意切块方式】不能用「找到第一个 } 就当表结束」—— 这里每项自己是一层内层表
+// （REVIEW_TOGGLE = { y = 0.070, h = 0.078 }），第一个 } 就是 REVIEW_TOGGLE 的右括号。
+// 必须按花括号配平切出整张表。
+function sliceBalanced(src, startIdx) {
+  const open = src.indexOf("{", startIdx);
+  if (open < 0) return "";
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") { depth--; if (depth === 0) return src.slice(open, i + 1); }
+  }
+  return "";
 }
-// 形态 B：表驱动（rvBtns 表内 name = "btnXxx", ... x = atX(a), y = atY(b)）
+const luaPL = {};
 {
-  const rvStart = luaSrc.indexOf("local rvBtns = {");
-  const rvEnd = luaSrc.indexOf("for _, spec in ipairs(rvBtns)", rvStart);
-  if (rvStart >= 0 && rvEnd > rvStart) {
-    const rvBlock = luaSrc.slice(rvStart, rvEnd);
-    for (const m of rvBlock.matchAll(/name = "(btn\w+)",[\s\S]*?x = atX\(([\d.]+)\), y = atY\(([\d.]+)\)/g)) {
-      luaBtns[m[1]] = { x: m[2], y: m[3] };
+  const s = luaSrc.indexOf("PANEL_LAYOUT = {");
+  if (s >= 0) {
+    const block = sliceBalanced(luaSrc, s);
+    // Lua 形态：TITLE = { y = 0.900, h = 0.085 },
+    for (const m of block.matchAll(/(\w+)\s*=\s*\{\s*y\s*=\s*([\d.]+)\s*,\s*h\s*=\s*([\d.]+)\s*\}/g)) {
+      luaPL[m[1]] = { y: m[2], h: m[3] };
     }
   }
 }
 
-const demoBtns = {};
-// 形态 A：btnSpecs 数组（["btnXxx", "hitXxx", atX(a), atY(b), ...]）
-for (const m of demoHtml.matchAll(/\["(btn\w+)", "hit\w+", atX\(([\d.]+)\), atY\(([\d.]+)\)/g)) {
-  demoBtns[m[1].toLowerCase()] = { x: m[2], y: m[3] };
-}
-// 形态 B：数组外单独 mkEl 的通栏按钮（{ x: atX(a), y: atY(b), ..., anchorId: "btnreview" }）
+// —— ② 解析 Demo const PL ——
+const demoPL = {};
 {
-  const anchorIdx = demoHtml.indexOf('anchorId: "btnreview"');
-  if (anchorIdx >= 0) {
-    const ctx = demoHtml.slice(Math.max(0, anchorIdx - 700), anchorIdx);
-    const mx = /x: atX\(([\d.]+)\)/.exec(ctx);
-    const my = /y: atY\(([\d.]+)\)/.exec(ctx);
-    if (mx && my) demoBtns["btnreviewtoggle"] = { x: mx[1], y: my[1] };
+  const s = demoHtml.indexOf("const PL = {");
+  if (s >= 0) {
+    const block = sliceBalanced(demoHtml, s);
+    // JS 形态：TITLE: { y: 0.900, h: 0.085 },   （也容错数组形态 [0.900, 0.085]）
+    for (const m of block.matchAll(/(\w+)\s*:\s*\{\s*y\s*:\s*([\d.]+)\s*,\s*h\s*:\s*([\d.]+)\s*\}/g)) {
+      demoPL[m[1]] = { y: m[2], h: m[3] };
+    }
+    for (const m of block.matchAll(/(\w+)\s*:\s*\[\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*[\d.]+\s*)?\]/g)) {
+      if (demoPL[m[1]] === undefined) demoPL[m[1]] = { y: m[2], h: m[3] };
+    }
+  }
+}
+
+// —— ③ Lua 按钮：name + 用的哪个槽名 ——
+// 直写形态：name = "btnXxx", ... y = row1Y, ... ；槽名由 row1Y 反查定义 `local row1Y = py + ph * PL.BTN_ROW1.y`
+const luaRowVar = {};
+for (const m of luaSrc.matchAll(/local\s+(\w+Y)\s*=\s*\w+\s*\+\s*\w+\s*\*\s*PL\.(\w+)\.y/g)) {
+  luaRowVar[m[1]] = m[2];
+}
+for (const m of luaSrc.matchAll(/name = "(btn\w+)",\s*parent = [^,]+,\s*\n?\s*x = atX\(([\d.]+)\),\s*y = (\w+)/g)) {
+  luaBtns[m[1]] = { x: m[2], slot: luaRowVar[m[3]] || m[3] };
+}
+// 表驱动形态（rvBtns）：同样按 name + x + y 变量抓
+{
+  const rvStart = luaSrc.indexOf("local rvBtns = {");
+  const rvEnd = luaSrc.indexOf("for _, spec in ipairs(rvBtns)", rvStart);
+  if (rvStart >= 0 && rvEnd > rvStart) {
+    for (const m of luaSrc.slice(rvStart, rvEnd).matchAll(/name = "(btn\w+)",[\s\S]*?x = atX\(([\d.]+)\),\s*y = (\w+)/g)) {
+      luaBtns[m[1]] = { x: m[2], slot: luaRowVar[m[3]] || m[3] };
+    }
+  }
+}
+// 通栏「看历史」按钮用的是 band("REVIEW_TOGGLE") 三个返回值
+if (luaSrc.includes('band("REVIEW_TOGGLE")')) {
+  luaBtns["btnreviewtoggle"] = luaBtns["btnreviewtoggle"] || { x: "0.04", slot: "REVIEW_TOGGLE" };
+  if (luaBtns["btnreviewtoggle"].slot === undefined) luaBtns["btnreviewtoggle"].slot = "REVIEW_TOGGLE";
+}
+
+const demoBtns = {};
+{
+  const rowVar = {};
+  for (const m of demoHtml.matchAll(/const\s+(\w+Y)\s*=\s*\w+\s*\+\s*\w+\s*\*\s*PL\.(\w+)\.y/g)) {
+    rowVar[m[1]] = m[2];
+  }
+  for (const m of demoHtml.matchAll(/\["(btn\w+)",\s*"hit\w+",\s*atX\(([\d.]+)\),\s*(\w+)/g)) {
+    demoBtns[m[1].toLowerCase()] = { x: m[2], slot: rowVar[m[3]] || m[3] };
+  }
+  // 通栏按钮（anchorId: "btnreview"）——它也走 PL.REVIEW_TOGGLE
+  if (demoHtml.includes('anchorId: "btnreview"')) {
+    demoBtns["btnreviewtoggle"] = { x: "0.04", slot: "REVIEW_TOGGLE" };
   }
 }
 
@@ -151,6 +210,27 @@ const BTN_PAIRS = [
 ];
 const btnDetail = [];
 let btnOk = true;
+
+// ---- ① 布局表逐项比对（这是 v1.11 起的真正事实来源）----
+const plKeys = new Set([...Object.keys(luaPL), ...Object.keys(demoPL)]);
+if (plKeys.size === 0) {
+  btnOk = false;
+  btnDetail.push("两侧都没解析到布局表（PANEL_LAYOUT / PL）—— 正则失效，请更新本脚本");
+}
+for (const k of plKeys) {
+  const a = luaPL[k], b = demoPL[k];
+  if (!a || !b) {
+    btnOk = false;
+    btnDetail.push(`布局表缺项 ${k}: lua=${a ? "有" : "无"} demo=${b ? "有" : "无"}`);
+    continue;
+  }
+  if (Number(a.y) !== Number(b.y) || Number(a.h) !== Number(b.h)) {
+    btnOk = false;
+    btnDetail.push(`布局表 ${k}: lua(${a.y},${a.h}) demo(${b.y},${b.h})`);
+  }
+}
+
+// ---- ② 每个按钮：x 与「用的哪个布局槽」两边一致 ----
 for (const [role, luaKey, demoKey] of BTN_PAIRS) {
   const a = luaBtns[luaKey];
   const b = demoBtns[demoKey];
@@ -159,23 +239,35 @@ for (const [role, luaKey, demoKey] of BTN_PAIRS) {
     btnDetail.push(`缺少控件 ${role}: lua(${luaKey})=${a ? "有" : "无"} demo(${demoKey})=${b ? "有" : "无"}`);
     continue;
   }
-  if (Number(a.x) !== Number(b.x) || Number(a.y) !== Number(b.y)) {
+  if (Number(a.x) !== Number(b.x)) {
     btnOk = false;
-    btnDetail.push(`${role}: lua(${a.x},${a.y}) demo(${b.x},${b.y})`);
+    btnDetail.push(`${role}: x lua=${a.x} demo=${b.x}`);
+  }
+  if (a.slot !== b.slot || luaPL[a.slot] === undefined) {
+    btnOk = false;
+    btnDetail.push(`${role}: 布局槽 lua=${a.slot} demo=${b.slot}` +
+      (luaPL[a.slot] === undefined ? `（lua 槽名 ${a.slot} 不在布局表内）` : ""));
   }
 }
 // 两侧不得有「没被配平表覆盖」的按钮（防止以后新增按钮忘了登记）
+// 【v1.11 白名单】音效开关（Lua `btnsfx` / 描边层 `btnsfxedge`，Demo 侧叫 `sfxtoggle`）
+// 不进配平表：它的 y 不是布局表常量，而是「面板底 − 自身高 − 间距」现算的，
+// 且两边高度兜底逻辑不同（Lua 有 max(44,h) 与 pc/mobile 两档实测不同高）。
+// 它靠下面「音效开关文案」两条断言 + 模拟器点击验证，硬比 y 只会造出假 FAIL。
+const BTN_ALLOW_EXTRA = new Set(["btnsfx", "btnsfxedge"]);
 const covered = { lua: new Set(BTN_PAIRS.map((p) => p[1])), demo: new Set(BTN_PAIRS.map((p) => p[2])) };
 for (const k of Object.keys(luaBtns)) {
-  if (!covered.lua.has(k)) { btnOk = false; btnDetail.push(`Lua 有未登记的按钮 ${k}`); }
+  if (!covered.lua.has(k) && !BTN_ALLOW_EXTRA.has(k)) { btnOk = false; btnDetail.push(`Lua 有未登记的按钮 ${k}`); }
 }
 for (const k of Object.keys(demoBtns)) {
-  if (!covered.demo.has(k)) { btnOk = false; btnDetail.push(`Demo 有未登记的按钮 ${k}`); }
+  if (!covered.demo.has(k) && !BTN_ALLOW_EXTRA.has(k)) { btnOk = false; btnDetail.push(`Demo 有未登记的按钮 ${k}`); }
 }
 if (!btnOk) fails++;
 rows.push({
-  name: `面板按钮布局一致（语义配平 ${BTN_PAIRS.length} 个）`,
-  luaVal: JSON.stringify(luaBtns), demoVal: JSON.stringify(demoBtns), ok: btnOk,
+  name: `面板按钮布局一致（PANEL_LAYOUT ${Object.keys(luaPL).length} 项 + 语义配平 ${BTN_PAIRS.length} 个按钮）`,
+  luaVal: `布局表 ${JSON.stringify(luaPL)} / 按钮 ${JSON.stringify(luaBtns)}`,
+  demoVal: `布局表 ${JSON.stringify(demoPL)} / 按钮 ${JSON.stringify(demoBtns)}`,
+  ok: btnOk,
 });
 if (btnDetail.length) console.log("  BTN_DIFF " + btnDetail.join("; "));
 

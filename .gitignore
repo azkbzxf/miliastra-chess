@@ -33,3 +33,11 @@ tmp/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# ===== issue #1 复现过程（2026-11-05）=====
+# 保留：GitHub issue 原图（缺陷证据）+ 探针脚本（可复跑）
+# 忽略：中间裁剪与放大图（由 _probe/_zoom 脚本可重新生成，合计约 1 MB）
+tools_work/issue1/crop_*.png
+tools_work/issue1/zoom_*.png
+tools_work/issue1/pc-*.png
+tools_work/issue1/mobile-*.png

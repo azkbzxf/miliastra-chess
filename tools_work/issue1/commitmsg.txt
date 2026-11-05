@@ -1,0 +1,51 @@
+fix(issue-1): 修复走棋特效错位/棋子漂移，重排信息栏，删除棋符画法与棋影，加控件写缓存
+
+GitHub issue #1 的六条全部修复并复验（runtime=simulator）。
+
+1. 走棋特效错位严重
+   根因：legalHL 是图片控件（pivot=0.5，按中心定位），但一直喂 LAYOUT.square_pos
+   的「格子左下角」坐标 —— 绿点偏左下 0.35 格、可吃红罩偏 0.5 格。
+   修法：改用格中心 tx+L.cell*0.5，并同步 ANIM.hlBase。
+
+2. 走几步后棋子图元开始错位
+   根因：image_apply 只在 rot~=0 时才写 SetLocalRotation，槽位回收给下一枚棋子时
+   残留上一枚的角度（这就是「走几步才出现」的原因：初次布子全是 0 度，看不出来）。
+   修法：无条件写（local r = rot or 0），靠 IMG_STATE 值比较跳过重复写。
+   验证：吃子链后扫 628 个在显图元，旋转值全部落在 PIECE_ART 的 51 个合法角度内。
+
+3. 优化右侧信息栏
+   根因：面板坐标散落几十处手算，失子行与走子记录区在 1600x900 下纵向重叠
+   0.013~0.020 个面板高度（1280x720 更明显），失子字母压进走子记录文字里。
+   修法：抽出 CONFIG.PANEL_LAYOUT 作为竖向排布唯一事实来源（11 项），
+   棋钟由上下两行改并排一行以腾出高度，按钮高加 max(44,...) 触摸兜底。
+
+4. 删除纯字体棋子画法，README 换模拟器真实截图
+   Demo 删除 GLYPH 表 / pieceGlyph() / pieceStyle / ?style= 参数 / 圆盘 CSS，
+   改为与 Lua 同一份 PIECE_ART（74 条形状）、同五层顺序的图元渲染。
+   README 主图换成千星模拟器实拍（pc-16-9 + mobile-16-9），
+   删除 screenshot-pieces-glyph.png（与主图字节相同的纯字体对照图）。
+
+5. 删除棋子底部阴影并让棋子在格中平衡
+   删投影层（六层 → 五层，控件 1399 → 1367，每枚 35 → 34 个图元控件）。
+   新增 piece_center_dy()：按旋转后 AABB 并集中心算全局位移 +0.0080920453。
+   必须是全局单一位移而非逐枚居中，否则兵会被拉成王一样高（实测比 0.909）。
+   实测 32 枚内容包围盒与格心偏差 <= 2.9px。
+
+6. 保证功能不变前提下优化性能
+   新增 IMG_STATE / VIS_STATE 值缓存（弱键表，不能挂在控件对象上）+ 文本写缓存；
+   新增 WRITE_STATS + cw()/cw_skip() 计量口，GetRepaintStats 多返回
+   ctrlWrites / ctrlWritesSkipped，任何人可自行复测。
+
+配套：
+- 新增 tests/（6 文件）：static_checks.cjs 8 项不变量、run-baseline.cjs 反向验证、
+  issue-1-cases.md 用例表、issue-1.cases.json runCase 用例、Red/Green 双证据。
+- consistency_check.cjs 判据升级：从「抓 atY 字面量」改为「解析 PANEL_LAYOUT 11 项
+  + 按钮语义配平」，否则表驱动布局下会双向空取变成假 PASS。
+- 挂载指南删除「建 12 个脚本映射」章节（v1.11 起不需要，主脚本 require 次数为 0）。
+- tech-architecture.md 补：五层渲染、视觉居中、PANEL_LAYOUT、控件写缓存四节。
+
+门禁：lua_check exit 0 / consistency_check ALL CONSISTENT / tests 8-8 PASS /
+run-baseline 4-8（证明新判据仍能抓住旧 bug，不会假绿）。
+
+未验证：网页 Demo 动画观感（browser-run: user，headless Edge 不推进 rAF）、
+真机渲染与 1367 控件容量、音色、21:9 / 19.5:9 / 4:3 三档画布。

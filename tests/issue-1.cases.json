@@ -1,0 +1,706 @@
+{
+  "format": "qxqy-autotest",
+  "version": 1,
+  "name": "issue-1-full-flow",
+  "dt": 0.03333333333333333,
+  "canvasId": "pc-16-9",
+  "description": "顶层对象是一条可直接喂给 runCase 的完整用例（启动 → e2→e4 → 音效开关）。cases[] 是拆开的 6 个细分用例，用 args:{case: cases[i]} 单独跑。【四条硬规则】(1) 每条断言都带 at，不写 at 会在 t=0 求值；(2) 回放循环是「先跑完 t<=at 的事件、再求值该 at 的断言」，所以 at=0 的断言会被 t=0 的点击污染 —— 本文件所有点击一律从 t>=0.1 起；(3) 坐标由 LAYOUT.compute 实算（pc-16-9：cell=87.75 / boardLeft=449.0 / boardBottom=99.0），格中心 = left+file*87.75+43.875, bottom+rank*87.75+43.875，rank 从 0 起；(4) 事件用插件规范化函数认的扁平写法（kind/t/x/y），不是 {type,args}（后者会被 er() 以 'unsupported event kind: (empty)' 拒绝）。【v1.11 面板重排后已同步】capwhite/capblack 空列表显示「无」（CONFIG.TEXT.CAP_NONE）；movelog 开局显示「还没有走子」（MOVELOG_EMPTY）；btnsfx 中心 y=59.0（h=ph*0.078 兜底 44px，实测 box left=1262.08 bottom=31.608 w=323.84 h=54.756）。【走子后 hint 保持「已选中」】apply_move/try_move 都不会重置 hint，只有取消选中/选中失败/新开局才回到 HINT_OPENING —— 所以走完一步后不要断言 hint 回到初始文案。",
+  "events": [
+    {
+      "t": 0.1,
+      "kind": "pointer",
+      "type": "click",
+      "x": 843.9,
+      "y": 230.6
+    },
+    {
+      "t": 0.6,
+      "kind": "pointer",
+      "type": "click",
+      "x": 843.9,
+      "y": 406.1
+    },
+    {
+      "t": 1.1,
+      "kind": "pointer",
+      "type": "click",
+      "x": 1424,
+      "y": 59
+    },
+    {
+      "t": 1.6,
+      "kind": "pointer",
+      "type": "click",
+      "x": 1424,
+      "y": 59
+    }
+  ],
+  "asserts": [
+    {
+      "kind": "log",
+      "contains": "启动完成"
+    },
+    {
+      "kind": "log",
+      "contains": "界面构建完成"
+    },
+    {
+      "at": 0,
+      "kind": "control",
+      "name": "panelturn",
+      "field": "text",
+      "equals": "轮到白方走子"
+    },
+    {
+      "at": 0,
+      "kind": "control",
+      "name": "hint",
+      "field": "text",
+      "equals": "点一枚自己的棋子，再点亮起来的格子"
+    },
+    {
+      "at": 0,
+      "kind": "control",
+      "name": "movelog",
+      "field": "text",
+      "equals": "还没有走子"
+    },
+    {
+      "at": 0,
+      "kind": "control",
+      "name": "capwhite",
+      "field": "text",
+      "equals": "无"
+    },
+    {
+      "at": 0,
+      "kind": "control",
+      "name": "capblack",
+      "field": "text",
+      "equals": "无"
+    },
+    {
+      "at": 0.05,
+      "kind": "control",
+      "name": "btnsfx",
+      "field": "text",
+      "equals": "音效：开"
+    },
+    {
+      "at": 0.45,
+      "kind": "control",
+      "name": "hint",
+      "field": "text",
+      "equals": "已选中 · 点亮的格子都能走"
+    },
+    {
+      "at": 1,
+      "kind": "control",
+      "name": "panelturn",
+      "field": "text",
+      "equals": "轮到黑方走子"
+    },
+    {
+      "at": 1,
+      "kind": "control",
+      "name": "movelog",
+      "field": "text",
+      "equals": "白 e2→e4"
+    },
+    {
+      "at": 1.5,
+      "kind": "control",
+      "name": "btnsfx",
+      "field": "text",
+      "equals": "音效：关"
+    },
+    {
+      "at": 2,
+      "kind": "control",
+      "name": "btnsfx",
+      "field": "text",
+      "equals": "音效：开"
+    }
+  ],
+  "cases": [
+    {
+      "format": "qxqy-autotest",
+      "version": 1,
+      "name": "boot",
+      "dt": 0.03333333333333333,
+      "canvasId": "pc-16-9",
+      "events": [
+        {
+          "t": 0.1,
+          "kind": "pointer",
+          "type": "move",
+          "x": 800,
+          "y": 450
+        }
+      ],
+      "asserts": [
+        {
+          "kind": "log",
+          "contains": "启动完成"
+        },
+        {
+          "kind": "log",
+          "contains": "界面构建完成"
+        },
+        {
+          "at": 0.2,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到白方走子"
+        },
+        {
+          "at": 0.2,
+          "kind": "control",
+          "name": "paneltitle",
+          "field": "text",
+          "equals": "黑白棋局"
+        },
+        {
+          "at": 0.2,
+          "kind": "control",
+          "name": "hint",
+          "field": "text",
+          "equals": "点一枚自己的棋子，再点亮起来的格子"
+        },
+        {
+          "at": 0.2,
+          "kind": "control",
+          "name": "movelog",
+          "field": "text",
+          "equals": "还没有走子"
+        },
+        {
+          "at": 0.2,
+          "kind": "control",
+          "name": "capwhite",
+          "field": "text",
+          "equals": "无"
+        },
+        {
+          "at": 0.2,
+          "kind": "control",
+          "name": "capblack",
+          "field": "text",
+          "equals": "无"
+        },
+        {
+          "at": 0.2,
+          "kind": "control",
+          "name": "btnsfx",
+          "field": "text",
+          "equals": "音效：开"
+        },
+        {
+          "at": 0.2,
+          "kind": "control",
+          "name": "btnreviewtoggle",
+          "field": "text",
+          "equals": "看历史"
+        },
+        {
+          "at": 0.2,
+          "kind": "tree",
+          "name": "movelog",
+          "exists": true
+        },
+        {
+          "at": 0.2,
+          "kind": "tree",
+          "name": "btnsfx",
+          "exists": true
+        },
+        {
+          "at": 0.2,
+          "kind": "tree",
+          "name": "hitsfx",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "format": "qxqy-autotest",
+      "version": 1,
+      "name": "move-e2-e4",
+      "dt": 0.03333333333333333,
+      "canvasId": "pc-16-9",
+      "events": [
+        {
+          "t": 0.1,
+          "kind": "pointer",
+          "type": "click",
+          "x": 843.9,
+          "y": 230.6
+        },
+        {
+          "t": 0.6,
+          "kind": "pointer",
+          "type": "click",
+          "x": 843.9,
+          "y": 406.1
+        }
+      ],
+      "asserts": [
+        {
+          "kind": "log",
+          "contains": "启动完成"
+        },
+        {
+          "at": 0.05,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到白方走子"
+        },
+        {
+          "at": 0.05,
+          "kind": "control",
+          "name": "movelog",
+          "field": "text",
+          "equals": "还没有走子"
+        },
+        {
+          "at": 0.45,
+          "kind": "control",
+          "name": "hint",
+          "field": "text",
+          "equals": "已选中 · 点亮的格子都能走"
+        },
+        {
+          "at": 1,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到黑方走子"
+        },
+        {
+          "at": 1,
+          "kind": "control",
+          "name": "movelog",
+          "field": "text",
+          "equals": "白 e2→e4"
+        }
+      ]
+    },
+    {
+      "format": "qxqy-autotest",
+      "version": 1,
+      "name": "select-shows-hint",
+      "dt": 0.03333333333333333,
+      "canvasId": "pc-16-9",
+      "events": [
+        {
+          "t": 0.1,
+          "kind": "pointer",
+          "type": "click",
+          "x": 843.9,
+          "y": 230.6
+        }
+      ],
+      "asserts": [
+        {
+          "kind": "log",
+          "contains": "启动完成"
+        },
+        {
+          "at": 0,
+          "kind": "control",
+          "name": "hint",
+          "field": "text",
+          "equals": "点一枚自己的棋子，再点亮起来的格子"
+        },
+        {
+          "at": 0.45,
+          "kind": "control",
+          "name": "hint",
+          "field": "text",
+          "equals": "已选中 · 点亮的格子都能走"
+        },
+        {
+          "at": 0.45,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到白方走子"
+        },
+        {
+          "at": 0.45,
+          "kind": "tree",
+          "name": "selhl",
+          "exists": true
+        },
+        {
+          "at": 0.45,
+          "kind": "tree",
+          "name": "legalhl1",
+          "exists": true
+        },
+        {
+          "at": 0.45,
+          "kind": "tree",
+          "name": "legalhl2",
+          "exists": true
+        }
+      ]
+    },
+    {
+      "format": "qxqy-autotest",
+      "version": 1,
+      "name": "sfx-toggle",
+      "dt": 0.03333333333333333,
+      "canvasId": "pc-16-9",
+      "events": [
+        {
+          "t": 0.2,
+          "kind": "pointer",
+          "type": "click",
+          "x": 1424,
+          "y": 59
+        },
+        {
+          "t": 0.8,
+          "kind": "pointer",
+          "type": "click",
+          "x": 1424,
+          "y": 59
+        }
+      ],
+      "asserts": [
+        {
+          "kind": "log",
+          "contains": "启动完成"
+        },
+        {
+          "at": 0,
+          "kind": "control",
+          "name": "btnsfx",
+          "field": "text",
+          "equals": "音效：开"
+        },
+        {
+          "at": 0.6,
+          "kind": "control",
+          "name": "btnsfx",
+          "field": "text",
+          "equals": "音效：关"
+        },
+        {
+          "at": 1.2,
+          "kind": "control",
+          "name": "btnsfx",
+          "field": "text",
+          "equals": "音效：开"
+        },
+        {
+          "at": 1.2,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到白方走子"
+        }
+      ]
+    },
+    {
+      "format": "qxqy-autotest",
+      "version": 1,
+      "name": "reject-opponent-piece",
+      "dt": 0.03333333333333333,
+      "canvasId": "pc-16-9",
+      "events": [
+        {
+          "t": 0.1,
+          "kind": "pointer",
+          "type": "click",
+          "x": 843.9,
+          "y": 669.4
+        }
+      ],
+      "asserts": [
+        {
+          "kind": "log",
+          "contains": "启动完成"
+        },
+        {
+          "at": 0.45,
+          "kind": "control",
+          "name": "hint",
+          "field": "text",
+          "equals": "点一枚自己的棋子，再点亮起来的格子"
+        },
+        {
+          "at": 0.45,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到白方走子"
+        }
+      ]
+    },
+    {
+      "format": "qxqy-autotest",
+      "version": 1,
+      "name": "slot-reuse-rot",
+      "dt": 0.03333333333333333,
+      "canvasId": "pc-16-9",
+      "description": "复现 issue #1 第 2 条（槽位复用后旋转残留）的自动侧用例。8 手意大利弃兵链 e2e4 d7d5 e4d5 g8f6 b1c3 f6d5 c3d5 d8d5，含 4 次吃子（exd5 / Nxd5 / Nxd5 / Qxd5），把槽位池打乱到发生「被吃 → 回收 → 再分配」。runCase 的 control 断言只能读 text 与存在性、读不了 localRotationZ，所以本用例断言能自动判的量：轮次文案逐步翻转、失子串逐步变化、末态记谱全文；结构性的 localRotationZ 与棋子 bbox 由 md 的 R2 用 get{inspect:true} 人工核。本链已用真 Lua 运行时（fengari，读 lua/levelScript.lua 的 CONFIG+RULES 区）逐手验证：8 手全合法、终局未将死也未将军。movelog 窗口 MOVE_LOG_LINES=6，8 手时显示第 3~8 手。",
+      "events": [
+        {
+          "t": 0.1,
+          "kind": "pointer",
+          "type": "click",
+          "x": 843.9,
+          "y": 230.6
+        },
+        {
+          "t": 0.6,
+          "kind": "pointer",
+          "type": "click",
+          "x": 843.9,
+          "y": 406.1
+        },
+        {
+          "t": 1.1,
+          "kind": "pointer",
+          "type": "click",
+          "x": 756.1,
+          "y": 669.4
+        },
+        {
+          "t": 1.6,
+          "kind": "pointer",
+          "type": "click",
+          "x": 756.1,
+          "y": 493.9
+        },
+        {
+          "t": 2.1,
+          "kind": "pointer",
+          "type": "click",
+          "x": 843.9,
+          "y": 406.1
+        },
+        {
+          "t": 2.6,
+          "kind": "pointer",
+          "type": "click",
+          "x": 756.1,
+          "y": 493.9
+        },
+        {
+          "t": 3.1,
+          "kind": "pointer",
+          "type": "click",
+          "x": 1019.4,
+          "y": 757.1
+        },
+        {
+          "t": 3.6,
+          "kind": "pointer",
+          "type": "click",
+          "x": 931.6,
+          "y": 581.6
+        },
+        {
+          "t": 4.1,
+          "kind": "pointer",
+          "type": "click",
+          "x": 580.6,
+          "y": 142.9
+        },
+        {
+          "t": 4.6,
+          "kind": "pointer",
+          "type": "click",
+          "x": 668.4,
+          "y": 318.4
+        },
+        {
+          "t": 5.1,
+          "kind": "pointer",
+          "type": "click",
+          "x": 931.6,
+          "y": 581.6
+        },
+        {
+          "t": 5.6,
+          "kind": "pointer",
+          "type": "click",
+          "x": 756.1,
+          "y": 493.9
+        },
+        {
+          "t": 6.1,
+          "kind": "pointer",
+          "type": "click",
+          "x": 668.4,
+          "y": 318.4
+        },
+        {
+          "t": 6.6,
+          "kind": "pointer",
+          "type": "click",
+          "x": 756.1,
+          "y": 493.9
+        },
+        {
+          "t": 7.1,
+          "kind": "pointer",
+          "type": "click",
+          "x": 756.1,
+          "y": 757.1
+        },
+        {
+          "t": 7.6,
+          "kind": "pointer",
+          "type": "click",
+          "x": 756.1,
+          "y": 493.9
+        }
+      ],
+      "asserts": [
+        {
+          "kind": "log",
+          "contains": "启动完成"
+        },
+        {
+          "at": 0,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到白方走子"
+        },
+        {
+          "at": 0,
+          "kind": "control",
+          "name": "movelog",
+          "field": "text",
+          "equals": "还没有走子"
+        },
+        {
+          "at": 0,
+          "kind": "control",
+          "name": "capwhite",
+          "field": "text",
+          "equals": "无"
+        },
+        {
+          "at": 0,
+          "kind": "control",
+          "name": "capblack",
+          "field": "text",
+          "equals": "无"
+        },
+        {
+          "at": 0.95,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到黑方走子"
+        },
+        {
+          "at": 1.95,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到白方走子"
+        },
+        {
+          "at": 2.95,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到黑方走子"
+        },
+        {
+          "at": 2.95,
+          "kind": "control",
+          "name": "capblack",
+          "field": "text",
+          "equals": "失子 P"
+        },
+        {
+          "at": 3.95,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到白方走子"
+        },
+        {
+          "at": 4.95,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到黑方走子"
+        },
+        {
+          "at": 5.95,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到白方走子"
+        },
+        {
+          "at": 5.95,
+          "kind": "control",
+          "name": "capwhite",
+          "field": "text",
+          "equals": "失子 P"
+        },
+        {
+          "at": 6.95,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到黑方走子"
+        },
+        {
+          "at": 6.95,
+          "kind": "control",
+          "name": "capblack",
+          "field": "text",
+          "equals": "失子 P N"
+        },
+        {
+          "at": 7.95,
+          "kind": "control",
+          "name": "panelturn",
+          "field": "text",
+          "equals": "轮到白方走子"
+        },
+        {
+          "at": 7.95,
+          "kind": "control",
+          "name": "capwhite",
+          "field": "text",
+          "equals": "失子 P N"
+        },
+        {
+          "at": 7.95,
+          "kind": "control",
+          "name": "capwhite",
+          "field": "text",
+          "equals": "失子 P N"
+        },
+        {
+          "at": 7.95,
+          "kind": "control",
+          "name": "capblack",
+          "field": "text",
+          "equals": "失子 P N"
+        },
+        {
+          "at": 7.95,
+          "kind": "control",
+          "name": "movelog",
+          "field": "text",
+          "equals": "白 e4→d5\n黑 g8→f6\n白 b1→c3\n黑 f6→d5\n白 c3→d5\n黑 d8→d5"
+        }
+      ]
+    }
+  ]
+}

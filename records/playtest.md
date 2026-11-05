@@ -621,3 +621,55 @@ Demo 是体验沟通件，缺音效不阻塞交付，混进 FAIL 只会变成永
 | 手机 1280×720 下音效按钮是否压边 | 本轮只验 `pc-16-9` |
 
 
+
+
+## 2026-11-05 · v1.11 issue #1 六条全部修复复验（runtime=simulator）
+
+环境：千星 UI 模拟器，canvas `pc-16-9`（1600×900）与 `mobile-16-9`（1280×720），Lua Runtime。
+执行者：AI（qxqy_studio_play / runCase / qxqy_studio_play_screenshot / get{inspect:true}）。
+脚本：`sim/levelScript.lua`（234972 字节，索引替换 4/4，与交付版逐行相同）。
+证据：`tests/green-evidence-current.txt`（静态 8/8）、`tests/red-evidence-baseline.txt`（修复前 4/8）。
+
+### 逐条对照 issue #1
+
+| 条 | 问题 | 根因 | 修法 | 复验结论 |
+|---|---|---|---|---|
+| 1 | 走棋特效错位严重 | `legalHL` 图片控件 `pivot=0.5`（按中心定位），但喂的是格子**左下角**坐标 `LAYOUT.square_pos` | 改用格中心 `tx + cell*0.5`，并同步 `ANIM.hlBase` | ✅ 绿点正落 b3/c3 格心；`get{inspect:true}` 实测 `legalhl1 @(830.98,305.48)`→ 应为 844/xx 的偏差归零 |
+| 2 | 多走几步后棋子图元错位 | `image_apply` 只在 `rot ~= 0` 时才写 `SetLocalRotation`，槽位回收时**残留上一枚的角度** | 改成无条件写（`local r = rot or 0` + 值缓存） | ✅ 吃子链后 `get{inspect:true}` 扫 628 个在显图元，**无一个旋转值不在 `PIECE_ART` 内**（51 个合法角度去重比对） |
+| 3 | 右侧信息栏需优化 | 面板坐标散落几十处手算，失子行与走子记录区纵向重叠 0.013~0.020 个面板高 | 抽出 `CONFIG.PANEL_LAYOUT` 单一事实来源；棋钟改并排一行腾出空间 | ✅ 11 项两两不相交（CHECK-6）；Lua 与 Demo 逐项相等（consistency_check）；截图三档不重叠 |
+| 4 | 删掉纯字体棋子，README 换模拟器截图 | Demo 有 `GLYPH` 表 + `pieceGlyph()` 第二套画法 | 删除 GLYPH / pieceGlyph / pieceStyle / `?style=` / 圆盘 CSS；README 换真截图 | ✅ Demo 无 U+2654–265F（count=0），48 项结构自检 + 32 项页面自检全过；README 主图已是 `pc-selection.png` 模拟器实拍 |
+| 5 | 删掉棋子底部阴影并让棋子在格中平衡 | ① 有投影层 ② 六种棋子并集中心不在 0.5（0.463~0.510） | ① 删投影层 ② 加全局 `piece_center_dy()` | ✅ 无阴影；32 枚内容包围盒与格心偏差 **≤ 2.9px** |
+| 6 | 保证功能不变的前提下优化性能 | 每槽每图元每次都全写（含动画期恒定的图元/颜色/旋转） | `IMG_STATE` / `VIS_STATE` 值缓存 + 文本写缓存 + 新增 `ctrlWrites` 计量口 | ✅ 控件 1399→1367；功能零变化（`move-e2-e4` 等 runCase 全绿） |
+
+### 本轮 runCase 实跑
+
+| # | 用例 | 事件 | 断言 | 结论 |
+|---|---|---|---|---|
+| R1-01 | 启动 | `start` | 无 mountError；`启动完成：状态=RUNNING 控件=1367` | ✅ |
+| R1-02 | 图元与控件数 | `start` | `棋子图元：6 种 × 2 方，单枚最多 34 个控件`；`控件 1367 个` | ✅ |
+| R1-03 | 走子全链路 | 点 e2 → 点 e4 | 选中提示「已选中 · 点亮的格子都能走」→ 走子后轮次「轮到黑方走子」+ 走子记录「白 e2→e4」 | ✅ |
+| R1-04 | 服务端广播 | 同上 | `ChessSync [0,12,28,0,""]` → `sent ChessSync to AllPlayers` | ✅ |
+| R1-05 | 音效触发 | 点 e2 / 点 e4 | `audioId 50894`（SELECT）/ `50942`（MOVE）各一次 | ✅ |
+| R1-06 | 落点高亮居中 | 点 b1 | 两个绿点分别落在 b3 / c3 格心（截图比对） | ✅ |
+| R1-07 | 面板空态文案 | `start` | 失子两行显示「无」、走子记录显示「还没有走子」 | ✅ |
+| R1-08 | 棋钟并排 | `start` | 「白 15:00」「黑 15:00」同一行、各半宽、字号 28 | ✅ |
+| R1-09 | 手机布局 | `device mobile-16-9` | 1280×720 下 `格宽 70.2`，面板与棋盘不重叠，按钮 44px 兜底生效 | ✅ |
+| R1-10 | 槽位复用旋转复位 | 吃子链后 `get{inspect:true}` | 628 个在显图元旋转值全部 ∈ `PIECE_ART` 的 51 个合法角度 | ✅ |
+
+### 静态与一致性门禁（全部 exit 0）
+
+| 门禁 | 结果 |
+|---|---|
+| `tools_work/lua_check.cjs` | 三份（`lua/` `sim/` `out/交付包/`）语法 + 11 分区 + 局部函数顺序全过 |
+| `tools_work/consistency_check.cjs` | **ALL CONSISTENT**（含新增「PANEL_LAYOUT 11 项 + 9 按钮语义配平」） |
+| `tests/static_checks.cjs` | **8/8 PASS** |
+| `tests/run-baseline.cjs`（对 git HEAD） | **4/8**（CHECK-3/4/5/6 FAIL）→ 证明新判据仍能抓住旧 bug，不会假绿 |
+
+### 本轮仍未验证（必须真机或用户自己看）
+
+| 项 | 原因 |
+|---|---|
+| **网页 Demo 的动画观感** | 子代理只跑得动 headless Edge，实测 `--headless=old` **不推进 requestAnimationFrame**（1.5s 仅 1 次回调）。走子补间 / 落子回弹 / 开局弹入 / 高亮呼吸的**实际视觉进度一次都没被观察到**，只验证了「补间挂在正确的容器上」。`browser-run: user` |
+| 真机渲染与控件容量 | 1367 个控件是否超真机上限未验证；模拟器只预览图元 100001–100006 |
+| 音色 | 模拟器只记录 audioId 与时长，不保证真的出声 |
+| `pc-21-9` / `mobile-19.5-9` / `mobile-4-3` | 仍未实测，布局按等比缩放推导 |

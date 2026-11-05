@@ -57,9 +57,9 @@ local CONFIG = {
   -- 棋盘上同时最多 32 枚棋子（开局 32 枚，升变不增加总数），故棋子槽位池按 32 建
   PIECE_MAX_SLOTS = 32,
   -- 【棋子图元预算】每枚棋子的图元控件数上限（启动时按 PIECE_ART 实际值校正）。
-  -- v1.7 改成「en-croissant / cburnett 剪影拟合 + 三层渲染」：
-  --   每枚 12~22 个形状；控件数 = 1 投影 + 2×外形 + 2×镂空 + 1×细节线 ≈ 27~45 个/枚
-  --   32 枚约 900~1300 个控件（v1.6 那套 400 图元方案是 1280）。
+  -- v1.9 起走「en-croissant / cburnett 剪影拟合 + 分层渲染」：
+  --   每枚 6~17 个形状；控件数 = 2×外形 + 2×镂空 + 1×细节线 ≈ 12~34 个/枚（v1.11 去投影）
+  --   32 枚约 400~1100 个控件（v1.6 那套 400 图元方案是 1280）。
   PIECE_PRIM_BUDGET = 64,
   -- 外形层每个形状向外长的量（描边宽度 = pad × 棋子方框边长）。
   -- 【取值依据，模拟器实测】
@@ -68,8 +68,10 @@ local CONFIG = {
   --           与浅格 240,217,181 太接近，1px 的深边不足以把轮廓拉出来）
   --   0.020 → ~1.6px，深边够粗，白棋在浅格上也能一眼看清轮廓。当前值。
   PIECE_OUTLINE_PAD = 0.020,
-  -- 棋子底部投影（椭圆）：宽/高占棋子方框比例，以及向下偏移量
-  PIECE_SHADOW_W = 0.78, PIECE_SHADOW_H = 0.11, PIECE_SHADOW_DY = 0.015,
+  -- 【细长形状的描边上限】描边量是相对棋子方框的正方形外扩量（+pad 到宽、+pad 到高）。
+  -- 对一根 0.05 宽的鬃毛线，0.020 方框外扩 = 该形状自身宽度的 80%，直接糊成一团色斑。
+  -- 所以再按「该形状短边 × 本比例」夹一道上限：短边越窄，允许外扩越小。
+  PIECE_PAD_THIN_RATIO = 0.22,
   -- 可选（缺省 0 表示不使用）
   PREFAB_CONTAINER     = 0,      -- 容器节点模板索引（需要分组管理时用；本项目不用）
 
@@ -186,9 +188,11 @@ local CONFIG = {
     WHITE_EDGE    = { 44, 40, 36, 255 },     -- 白方描边
     BLACK_FILL    = { 36, 33, 30, 255 },     -- 黑方填充
     BLACK_EDGE    = { 246, 243, 238, 255 },  -- 黑方描边
-    -- 【浅色主题必须降低投影不透明度】深色之外壳下 a=64 尚可，浅米底上会糊成脏灰团。
-    -- Demo 侧棋子没有投影（全靠 CSS 边框表达轮廓），Lua 保留投影但压到 a=40。
-    PIECE_SHADOW  = { 0, 0, 0, 40 },         -- 棋子投影
+    -- 【v1.11 删除棋子投影】issue #1 第 5 条：棋盘浅木格上的半透明椭圆看起来像「没对齐的灰斑」，
+    -- 而且投影只能整体压在底座下方，和「让棋子在格子里视觉居中」直接冲突 ——
+    -- 只要还画投影，棋子的视觉重心就一定偏上。删掉投影后靠描边表达轮廓（与 Demo 一致）。
+    -- 保留这个键是为了兼容外部引用（历史配置表/文档），运行期已无任何读取点。
+    PIECE_SHADOW  = { 0, 0, 0, 0 },           -- 【已停用】棋子投影，运行期不绘制
 
     -- 投影与提示条淡底（Demo 用 CSS box-shadow / 纯文字，Lua 用半透明块近似）
     BOARD_SHADOW  = { 120, 88, 58, 60 },     -- 棋盘外框投影（对齐 Demo rgba(120,88,58,…)）
@@ -267,14 +271,49 @@ local CONFIG = {
   -- 棋钟跌破多少秒时播一次 LOW_TIME 提示（只播一次／每方各一次）
   SFX_LOW_TIME_SEC = 30,
 
+  -- ===== 侧面板纵向分区（v1.11，issue #1 第 3 条「优化右侧信息栏」）=====
+  -- 【为什么要做成表】旧版每个控件各写一个 atY(0.52) / atY(0.46) / atY(0.338)，
+  -- 改一处必须心算另外三处，结果就是「白方失子」那一行和下面的走子记录区纵向重叠
+  -- （issue 截图里 'P P P N Q' 压在走子记录上）。现在整条竖向排布只有这一张表，
+  -- 任何两项都必须满足 y0 区间互不相交（tests/static_checks.cjs 的 CHECK-6 会验）。
+  --
+  -- y 是相对面板高度的下边缘比例（0 = 面板底，1 = 面板顶），h 是高度比例。
+  -- 数值都为「字体实际占位」留了余量：文本框单行占位 ≈ 字号 × 1.65
+  -- （行高 1.2 + 内边距 0.45，平台 textLayout.requiredHeight 实测口径）。
+  PANEL_LAYOUT = {
+    -- 三行按钮（行 3 常驻：对局中「看历史」/ 复盘中「退出复盘」）
+    REVIEW_TOGGLE = { y = 0.070, h = 0.078 },
+    BTN_ROW2      = { y = 0.163, h = 0.078 },
+    BTN_ROW1      = { y = 0.255, h = 0.078 },
+    DIV_BTN       = { y = 0.348, h = 0.005 },   -- 按钮区 与 走子记录 之间的分隔线
+    -- 走子记录（6 行 × 字号 20）
+    MOVE_LOG      = { y = 0.360, h = 0.218 },
+    DIV_LOG       = { y = 0.588, h = 0.005 },   -- 走子记录 与 失子区 之间的分隔线
+    CAP_BLACK     = { y = 0.600, h = 0.050 },
+    CAP_WHITE     = { y = 0.660, h = 0.050 },
+    -- 两个棋钟**并排**一格里（左右各半），不再上下各占一行 —— 省下的 0.088
+    -- 全部给了走子记录区，才装得下 6 行而不压到失子行。
+    CLOCKS        = { y = 0.730, h = 0.088 },
+    TURN          = { y = 0.828, h = 0.062 },
+    TITLE         = { y = 0.900, h = 0.085 },
+  },
+  -- 失子行文案前缀（v1.11：只写字母 'P P N' 看不出是白方还是黑方的子，补上前缀）
+  CAP_PREFIX = "失子 ",
+
   -- ===== 字号（1600x900 基准下的整数，与 docs/策划案.md 10.7 一致）=====
+  -- ===== 性能计量开关（issue #1 第 6 条）=====
+  -- 打开后 GetRepaintStats() 会给出「控件属性写次数 / 被缓存跳过的次数」，
+  -- 用于量化性能优化的实际效果。关掉可省掉两次整数比较（收益极小，
+  -- 默认开是为了让任何人拿到脚本都能自己复测，而不是只有我相信我自己的数字）。
+  TRACK_CONTROL_WRITES = true,
+
   -- 缩放规则：实际字号 = 基准字号 × (canvasH / 900)，向下取整；下限 16。
   FONT = {
     COORD        = 22,
     PIECE        = 52,
     PANEL_TITLE  = 32,
     PANEL_BODY   = 20,   -- 轮次 / 被吃子 / 走子记录
-    CLOCK        = 36,
+    CLOCK        = 28,   -- v1.11：棋钟改成并排两格，每格只有半宽，36 会顶满被换行截断
     BUTTON       = 24,
     HINT         = 24,
     RESULT_TITLE = 44,
@@ -783,16 +822,77 @@ local function piece_art_of(p)
   return PIECE_ART[math.abs(p)]
 end
 
--- 单枚棋子的控件数量：1 投影 + 2×(外形 + 镂空) + 1×细节线
+-- 单枚棋子的控件数量（v1.11 起不含投影）
 --   外形 role0：描边层 + 填充层 = 2 个
 --   镂空 role1：描边层 + 填充层 = 2 个
 --   细节 role2：只画 1 个（它就是一条线，不需要描边层）
 local function piece_prim_count(list)
-  local n = 1                     -- 投影
+  local n = 0
   for _, s in ipairs(list) do
     if s[7] == 2 then n = n + 1 else n = n + 2 end
   end
   return n
+end
+
+-- 单个形状旋转后的外接框（归一化坐标，左下原点 Y 向上）
+-- 千星图元绕自身中心旋转，所以外接框只需绕 (cx,cy) 转四个角再取极值。
+-- 【为什么要算这个】issue #1 第 2 条「多走几步后棋子错位」的对照基线，
+-- 以及第 5 条「棋子在格子里要视觉居中」都需要**旋转后**的真实范围 ——
+-- 直接用 w/h 会把斜置的鬃毛算窄，得到的居中量偏差能到 1~2px。
+local function shape_bbox(s)
+  local cx, cy, w, h = s[2], s[3], s[4], s[5]
+  local rad = math.rad(s[6] or 0)
+  local cs, sn = math.cos(rad), math.sin(rad)
+  local ex, ey = w * 0.5, h * 0.5
+  local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+  for _, sx in ipairs({ -1, 1 }) do
+    for _, sy in ipairs({ -1, 1 }) do
+      local px, py = sx * ex, sy * ey
+      local rx = px * cs - py * sn
+      local ry = px * sn + py * cs
+      local ax, ay = cx + rx, cy + ry
+      if ax < x0 then x0 = ax end
+      if ax > x1 then x1 = ax end
+      if ay < y0 then y0 = ay end
+      if ay > y1 then y1 = ay end
+    end
+  end
+  return x0, y0, x1, y1
+end
+
+-- 【棋子视觉居中量】issue #1 第 5 条
+-- 删掉底部投影后，棋子的视觉重心完全由形状本身决定。实测六个 kind 的外形包围盒
+-- 竖向中心落在 0.463~0.510（相对棋子方框），整体并集中心 0.492 —— 偏低 0.008，
+-- 在 81px 方框上约 0.6px。数值虽小，但这是「有没有认真对齐」的差别，且必须
+-- **由数据算出来**而不是手填：以后重拟合棋子会自动跟上。
+--
+-- 【为什么用「全局一个偏移」而不是每枚各自居中】
+--   各自居中会把兵抬到和王一样高 —— 兵本来就该比王矮（实测 兵/王 高度比 0.909）。
+--   全局偏移只整体平移，不改变各枚之间的相对高度，正是「站在同一条基线上」的观感。
+local PIECE_CENTER_DY = nil
+
+local function piece_center_dy()
+  if PIECE_CENTER_DY ~= nil then return PIECE_CENTER_DY end
+  local y0, y1 = math.huge, -math.huge
+  for _, pid in ipairs({ PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING }) do
+    local list = PIECE_ART[pid]
+    if list ~= nil then
+      for _, s in ipairs(list) do
+        -- 只统计外形（role0）：镂空/细节线在轮廓内部，不影响视觉重心
+        if s[7] == 0 then
+          local _, sy0, _, sy1 = shape_bbox(s)
+          if sy0 < y0 then y0 = sy0 end
+          if sy1 > y1 then y1 = sy1 end
+        end
+      end
+    end
+  end
+  if y0 == math.huge or y1 <= y0 then
+    PIECE_CENTER_DY = 0
+  else
+    PIECE_CENTER_DY = 0.5 - (y0 + y1) * 0.5
+  end
+  return PIECE_CENTER_DY
 end
 
 -- 全部棋子里的最大控件数：32 个槽位都按这个容量建，任何一枚都放得下。
@@ -1655,21 +1755,6 @@ local function image_type_stretch()
   return nil
 end
 
--- 给图片控件设置「图元 + 颜色 + 旋转」。真机与沙箱能力不同，全部 pcall 包裹。
-local function image_apply(ctrl, asset, color, rot)
-  if ctrl == nil then return end
-  if asset and asset > 0 then
-    local src = piece_image_source_enum()
-    if src ~= nil then
-      pcall(function() ctrl:SetImage(src, asset) end)
-    end
-  end
-  local it = image_type_stretch()
-  if it ~= nil then pcall(function() ctrl.imageType = it end) end
-  if color ~= nil then pcall(function() ctrl.imageColor = color_of(color) end) end
-  if rot ~= nil and rot ~= 0 then pcall(function() ctrl:SetLocalRotation(0, 0, rot) end) end
-end
-
 -- 图元种类 → 千星静态图片资产
 -- 【兼容两种写法】老格式用字符串 "rect"/"circle"/"tri"，新格式（拟合生成）用数字：
 --   0/4 = 矩形   1/3 = 椭圆   2 = 三角
@@ -1683,6 +1768,119 @@ local function prim_asset(kind)
   if kind == "rect" then return CONFIG.PIECE_ASSET.RECT end
   if kind == "tri"  then return CONFIG.PIECE_ASSET.TRI  end
   return CONFIG.PIECE_ASSET.CIRCLE
+end
+
+-- =============================================================================
+-- 控件写计数（v1.11，issue #1 第 6 条的性能证据口）
+-- -----------------------------------------------------------------------------
+-- 「每帧几千次控件写」这类性能结论必须有可读的数字支撑，不能只靠观感。
+-- 这里统计真正打到平台上的**属性写**次数，以及被「值相同」缓存跳过的次数。
+-- 由 GetRepaintStats() 暴露，任何人在模拟器或真机上都能自己复测。
+--
+-- 【为什么定义在 ANIM 之前】image_apply 在 ANIM 区之前就要用它。
+-- 它不属于动画，属于「平台写计量」，所以单独一张表，不依赖 ANIM。
+-- 计数只做整数自增，开销可忽略；想彻底关掉把 CONFIG.TRACK_CONTROL_WRITES 置 false。
+-- =============================================================================
+local WRITE_STATS = { writes = 0, skipped = 0 }
+
+-- 统一的控件写计数口。所有进平台的属性写调用前记一笔。
+-- 【为什么用函数而不是在每个调用点 ++】写点有十几处，漏一处数字就不可信；
+-- 包成函数后新增写点只调一次，以后要做「按控件分类统计」也只改这里。
+local function cw()
+  if CONFIG.TRACK_CONTROL_WRITES then
+    WRITE_STATS.writes = WRITE_STATS.writes + 1
+  end
+end
+
+-- 记一次「本来要写但值没变，跳过」——用于量化写缓存到底省了多少
+local function cw_skip()
+  if CONFIG.TRACK_CONTROL_WRITES then
+    WRITE_STATS.skipped = WRITE_STATS.skipped + 1
+  end
+end
+
+-- 【控件可见性缓存】记录每个控件当前的 active/visible 状态，供 ui_set_active 跳过重复写。
+-- 必须与 IMG_STATE 一样放在控件工厂之前：工厂创建控件时是「先隐藏」的，
+-- 那次写入也要登记进来，否则缓存与真实状态一开始就不同步。
+local VIS_STATE = setmetatable({}, { __mode = "k" })
+
+-- 【控件写缓存】记录「每个图片控件当前显示的是什么」，用于跳过重复写。
+--
+-- 【为什么不能把缓存字段挂在控件上】`ctrl.__imgAsset = x` 这类写法依赖控件对象是
+-- 普通 Lua 表；平台对象可能是带严格元表的 userdata，写未知字段会抛 "no such field"。
+-- 所以缓存放在脚本侧的弱键表里：控件被销毁后条目自动回收，不会泄漏。
+--
+-- 键是控件对象本身，值是 { asset=, color=, rot=, typeSet= }。
+-- color 存的是 CONFIG.COLOR 里那张 rgba 表的**引用**，比较用 rawequal 语义（==）即可命中。
+local IMG_STATE = setmetatable({}, { __mode = "k" })
+
+local function img_state(ctrl)
+  local st = IMG_STATE[ctrl]
+  if st == nil then
+    st = {}
+    IMG_STATE[ctrl] = st
+  end
+  return st
+end
+
+-- 给图片控件设置「图元 + 颜色 + 旋转」。真机与沙箱能力不同，全部 pcall 包裹。
+--
+-- 【v1.11 两处关键修正，都对应 issue #1】
+--
+-- ①【旋转必须无条件写 —— 这是「多走几步后棋子错位」的根因】
+--   旧写法：`if rot ~= nil and rot ~= 0 then SetLocalRotation(...) end`
+--   于是 rot == 0 的形状**完全不碰旋转**，控件的 localRotationZ 保留上一次的值。
+--   槽位池会被复用：一辆车被吃之后那个槽位回收，下一枚走过去的马拿到的还是同一批图元，
+--   其中「旋转为 0」的那些形状就继承了车留下的角度 —— 看起来就是棋子「散架、错位」。
+--   而且错位只会在走过若干手（发生吃子/换子的槽位回收）之后才出现，
+--   正好符合 issue 里「多走几步棋后棋子图元开始错位」的描述。
+--   现在改成：一律写入（rot 缺省按 0），不会残留。
+--
+-- ②【值相同就不写控件（性能）】
+--   每帧脏槽位重绘时，同一批图元要重复写「图元 ID / 颜色 / 旋转」三项 —— 而这三项
+--   在动画期间根本不变（动画只改尺寸与位置）。命中缓存就跳过平台调用。
+local function image_apply(ctrl, asset, color, rot)
+  if ctrl == nil then return end
+  local st = img_state(ctrl)
+  if asset and asset > 0 then
+    if st.asset ~= asset then
+      st.asset = asset
+      local src = piece_image_source_enum()
+      if src ~= nil then
+        cw()
+        pcall(function() ctrl:SetImage(src, asset) end)
+      end
+    else
+      cw_skip()
+    end
+  end
+  -- 拉伸类型只需设一次（枚举不会变）
+  if not st.typeSet then
+    st.typeSet = true
+    local it = image_type_stretch()
+    if it ~= nil then
+      cw()
+      pcall(function() ctrl.imageType = it end)
+    end
+  end
+  if color ~= nil then
+    if st.color ~= color then
+      st.color = color
+      cw()
+      pcall(function() ctrl.imageColor = color_of(color) end)
+    else
+      cw_skip()
+    end
+  end
+  -- 【无条件写，见上方 ①】rot 缺省按 0 处理，保证控件不会残留上一位使用者的旋转
+  local r = rot or 0
+  if st.rot ~= r then
+    st.rot = r
+    cw()
+    pcall(function() ctrl:SetLocalRotation(0, 0, r) end)
+  else
+    cw_skip()
+  end
 end
 
 -- 创建一个图片控件（棋子图元用）。
@@ -2204,11 +2402,23 @@ end
 local function build_panel()
   local L = UI.L
   local px, py, pw, ph = L.panelLeft, L.panelBottom, L.panelW, L.panelH
-  -- 面板内相对位置：x 从左 0..1，y 从下 0..1（与策划案 10.3 表一致）
+  -- 面板内相对位置：x 从左 0..1，y 从下 0..1
   local function atX(r) return px + pw * r end
-  local function atY(r) return py + ph * r end
   local function w(r) return pw * r end
   local function h(r) return ph * r end
+  -- 【v1.11 纵向排布的唯一来源】CONFIG.PANEL_LAYOUT[name] = { y=下边缘比例, h=高度比例 }
+  -- 任何一项都必须直接查表，不许再写裸数字 —— 旧版就是在各处写 atY(0.52)/atY(0.46)/atY(0.338)
+  -- 导致失子行与走子记录区重叠（issue #1 第 3 条）。
+  local PL = CONFIG.PANEL_LAYOUT
+  local function band(name)
+    local b = PL[name]
+    return atX(0.04), py + ph * b.y, w(0.92), h(b.h)
+  end
+  -- 内嵌底（比文字块缩进一点，看起来像「卡片里的一格」）
+  local function bandInner(name)
+    local b = PL[name]
+    return atX(0.05), py + ph * b.y, w(0.90), h(b.h)
+  end
 
   -- ===== 面板底（三层：投影 → 卡片 → 内嵌高光边）=====
   -- 设计：面板不再是一块纯色，而是「浮在底上的卡片」，有投影和 1px 描边，
@@ -2244,112 +2454,150 @@ local function build_panel()
     bg = CONFIG.COLOR.PANEL_EDGE, text = "",
   })
 
-  -- 标题 (4%, 90%) 92% × 8%
-  UI.panel.title = create_text({
-    name = "paneltitle", parent = UI.host,
-    x = atX(0.04), y = atY(0.90), w = w(0.92), h = h(0.08),
-    text = CONFIG.TEXT.PANEL_TITLE, fontColor = CONFIG.COLOR.TEXT_MAIN,
-    fontSize = L.font(CONFIG.FONT.PANEL_TITLE),
-    hAlign = Enum.TextHorizontalAlignment.Middle,
-    vAlign = Enum.TextVerticalAlignment.Middle,
-  })
+  -- 标题
+  do
+    local bx, by, bw, bh = band("TITLE")
+    UI.panel.title = create_text({
+      name = "paneltitle", parent = UI.host,
+      x = bx, y = by, w = bw, h = bh,
+      text = CONFIG.TEXT.PANEL_TITLE, fontColor = CONFIG.COLOR.TEXT_MAIN,
+      fontSize = L.font(CONFIG.FONT.PANEL_TITLE),
+      hAlign = Enum.TextHorizontalAlignment.Middle,
+      vAlign = Enum.TextVerticalAlignment.Middle,
+    })
+  end
 
   -- 轮次指示：做成一条「状态条」——底色随走子方切换，文字用强调色
   -- 【浅色主题】底色用 PANEL_SECTION(238,234,227) 而不是 PANEL_INNER：
   -- Demo 的 panelturn 背景就是 --c-panel-sec（chess_demo.html 第 197 行），
   -- 比卡片 252,250,247 略深一档，强调色字压上去才立得住。
-  UI.panel.turnBg = create_text({
-    name = "panelturnbg", parent = UI.host,
-    x = atX(0.04), y = atY(0.805), w = w(0.92), h = h(0.065),
-    bg = CONFIG.COLOR.PANEL_SECTION, text = "",
-  })
-  UI.panel.turn = create_text({
-    name = "panelturn", parent = UI.host,
-    x = atX(0.04), y = atY(0.81), w = w(0.92), h = h(0.06),
-    text = CONFIG.TEXT.TURN_WHITE, fontColor = CONFIG.COLOR.TEXT_ACCENT,
-    fontSize = L.font(CONFIG.FONT.PANEL_BODY),
-    hAlign = Enum.TextHorizontalAlignment.Middle,
-    vAlign = Enum.TextVerticalAlignment.Middle,
-  })
+  do
+    local bx, by, bw, bh = band("TURN")
+    UI.panel.turnBg = create_text({
+      name = "panelturnbg", parent = UI.host,
+      x = bx, y = by, w = bw, h = bh,
+      bg = CONFIG.COLOR.PANEL_SECTION, text = "",
+    })
+    UI.panel.turn = create_text({
+      name = "panelturn", parent = UI.host,
+      x = bx, y = by, w = bw, h = bh,
+      text = CONFIG.TEXT.TURN_WHITE, fontColor = CONFIG.COLOR.TEXT_ACCENT,
+      fontSize = L.font(CONFIG.FONT.PANEL_BODY),
+      hAlign = Enum.TextHorizontalAlignment.Middle,
+      vAlign = Enum.TextVerticalAlignment.Middle,
+    })
+  end
 
-  -- 棋钟卡片底：两个圆角块，分别给白黑（当前走子方那块的底色会变亮）
-  UI.panel.clockWhiteBg = create_text({
-    name = "clockwhitebg", parent = UI.host,
-    x = atX(0.05), y = atY(0.698), w = w(0.90), h = h(0.085),
-    bg = CONFIG.COLOR.PANEL_INNER, text = "",
-  })
-  UI.panel.clockBlackBg = create_text({
-    name = "clockblackbg", parent = UI.host,
-    x = atX(0.05), y = atY(0.598), w = w(0.90), h = h(0.085),
-    bg = CONFIG.COLOR.PANEL_INNER, text = "",
-  })
+  -- ===== 棋钟：v1.11 改为**并排一行**（白左黑右）=====
+  -- 【为什么并排】旧版上下各占一行 9% 高，两行加间隔要 18.8% 的面板高度，
+  -- 直接把失子区和走子记录区挤到重叠（issue #1 第 3 条）。并排后只占 8.8%，
+  -- 省出的空间全部给走子记录（6 行要 21.8%），失子行才有地方站。
+  -- 字号同步从 36 降到 28：并排后每半格宽只有 ~0.44×pw，1600 画布下 ≈ 154px，
+  -- 36 号字「白 15:00」实测宽约 148px，几乎顶满、手机 1280 下会换行被截断。
+  do
+    local bx, by, bw, bh = band("CLOCKS")
+    local half = bw * 0.5
+    UI.panel.clockWhiteBg = create_text({
+      name = "clockwhitebg", parent = UI.host,
+      x = bx, y = by, w = half, h = bh,
+      bg = CONFIG.COLOR.PANEL_INNER, text = "",
+    })
+    UI.panel.clockBlackBg = create_text({
+      name = "clockblackbg", parent = UI.host,
+      x = bx + half, y = by, w = half, h = bh,
+      bg = CONFIG.COLOR.PANEL_INNER, text = "",
+    })
+    UI.panel.clockWhite = create_text({
+      name = "clockwhite", parent = UI.host,
+      x = bx, y = by, w = half, h = bh,
+      text = "白 15:00", fontColor = CONFIG.COLOR.TEXT_MAIN,
+      fontSize = L.font(CONFIG.FONT.CLOCK),
+      hAlign = Enum.TextHorizontalAlignment.Middle,
+      vAlign = Enum.TextVerticalAlignment.Middle,
+    })
+    UI.panel.clockBlack = create_text({
+      name = "clockblack", parent = UI.host,
+      x = bx + half, y = by, w = half, h = bh,
+      text = "黑 15:00", fontColor = CONFIG.COLOR.TEXT_MAIN,
+      fontSize = L.font(CONFIG.FONT.CLOCK),
+      hAlign = Enum.TextHorizontalAlignment.Middle,
+      vAlign = Enum.TextVerticalAlignment.Middle,
+    })
+  end
 
-  -- 白方棋钟 (4%, 70%) 92% × 9%
-  UI.panel.clockWhite = create_text({
-    name = "clockwhite", parent = UI.host,
-    x = atX(0.04), y = atY(0.70), w = w(0.92), h = h(0.09),
-    text = "白方 15:00", fontColor = CONFIG.COLOR.TEXT_MAIN,
-    fontSize = L.font(CONFIG.FONT.CLOCK),
-    hAlign = Enum.TextHorizontalAlignment.Middle,
-    vAlign = Enum.TextVerticalAlignment.Middle,
-  })
-  -- 黑方棋钟 (4%, 60%) 92% × 9%
-  UI.panel.clockBlack = create_text({
-    name = "clockblack", parent = UI.host,
-    x = atX(0.04), y = atY(0.60), w = w(0.92), h = h(0.09),
-    text = "黑方 15:00", fontColor = CONFIG.COLOR.TEXT_MAIN,
-    fontSize = L.font(CONFIG.FONT.CLOCK),
-    hAlign = Enum.TextHorizontalAlignment.Middle,
-    vAlign = Enum.TextVerticalAlignment.Middle,
-  })
   -- 分隔线（棋钟区 与 失子区 之间）
-  UI.panel.divider1 = create_text({
-    name = "divider1", parent = UI.host,
-    x = atX(0.08), y = atY(0.575), w = w(0.84), h = cardPad * 0.4,
-    bg = CONFIG.COLOR.PANEL_EDGE, text = "",
-  })
-  -- 被吃子（白）(4%, 52%) 92% × 5%
-  UI.panel.capturedWhite = create_text({
-    name = "capwhite", parent = UI.host,
-    x = atX(0.04), y = atY(0.52), w = w(0.92), h = h(0.05),
-    text = "", fontColor = CONFIG.COLOR.TEXT_SUB,
-    fontSize = L.font(CONFIG.FONT.PANEL_BODY),
-    hAlign = Enum.TextHorizontalAlignment.Middle,
-    vAlign = Enum.TextVerticalAlignment.Middle,
-  })
-  -- 被吃子（黑）(4%, 46%) 92% × 5%
-  UI.panel.capturedBlack = create_text({
-    name = "capblack", parent = UI.host,
-    x = atX(0.04), y = atY(0.46), w = w(0.92), h = h(0.05),
-    text = "", fontColor = CONFIG.COLOR.TEXT_SUB,
-    fontSize = L.font(CONFIG.FONT.PANEL_BODY),
-    hAlign = Enum.TextHorizontalAlignment.Middle,
-    vAlign = Enum.TextVerticalAlignment.Middle,
-  })
-  -- 走子记录区 (4%, 26%) 92% × 18%
-  -- 内嵌底色，让记录区看起来像一块「记事板」
-  UI.panel.moveLogBg = create_text({
-    name = "movelogbg", parent = UI.host,
-    x = atX(0.05), y = atY(0.338), w = w(0.90), h = h(0.135),
-    bg = CONFIG.COLOR.PANEL_INNER, text = "",
-  })
-  UI.panel.moveLog = create_text({
-    name = "movelog", parent = UI.host,
-    x = atX(0.04), y = atY(0.34), w = w(0.92), h = h(0.14),
-    text = "", fontColor = CONFIG.COLOR.TEXT_SUB,
-    fontSize = L.font(CONFIG.FONT.PANEL_BODY),
-    hAlign = Enum.TextHorizontalAlignment.Middle,
-    vAlign = Enum.TextVerticalAlignment.Top,
-  })
-  -- 分隔线（失子/记录区 与 按钮区 之间）
-  UI.panel.divider2 = create_text({
-    name = "divider2", parent = UI.host,
-    x = atX(0.08), y = atY(0.325), w = w(0.84), h = cardPad * 0.4,
-    bg = CONFIG.COLOR.PANEL_EDGE, text = "",
-  })
+  do
+    local b = PL.DIV_LOG
+    UI.panel.divider1 = create_text({
+      name = "divider1", parent = UI.host,
+      x = atX(0.08), y = py + ph * b.y, w = w(0.84), h = h(b.h),
+      bg = CONFIG.COLOR.PANEL_EDGE, text = "",
+    })
+  end
 
-  -- 四个按钮：8% 高，44% 宽。按钮高 8% 在 720 高下 = 44.9px，刚好达到触摸目标下限，不可再降。
-  local btnW, btnH = w(0.44), h(0.08)
+  -- 失子行（白 / 黑各一行）
+  -- 【v1.11 文案】旧版只列字母 "P P N"，看不出这是谁吃掉谁的；现在带前缀（见 CONFIG.CAP_PREFIX）。
+  do
+    local bx, by, bw, bh = band("CAP_WHITE")
+    UI.panel.capturedWhite = create_text({
+      name = "capwhite", parent = UI.host,
+      x = bx, y = by, w = bw, h = bh,
+      text = "", fontColor = CONFIG.COLOR.TEXT_SUB,
+      fontSize = L.font(CONFIG.FONT.PANEL_BODY),
+      hAlign = Enum.TextHorizontalAlignment.Middle,
+      vAlign = Enum.TextVerticalAlignment.Middle,
+    })
+    local cx, cy, cw, ch = band("CAP_BLACK")
+    UI.panel.capturedBlack = create_text({
+      name = "capblack", parent = UI.host,
+      x = cx, y = cy, w = cw, h = ch,
+      text = "", fontColor = CONFIG.COLOR.TEXT_SUB,
+      fontSize = L.font(CONFIG.FONT.PANEL_BODY),
+      hAlign = Enum.TextHorizontalAlignment.Middle,
+      vAlign = Enum.TextVerticalAlignment.Middle,
+    })
+  end
+
+  -- 走子记录区：内嵌底色让记录区看起来像一块「记事板」
+  do
+    local ix, iy, iw, ih = bandInner("MOVE_LOG")
+    UI.panel.moveLogBg = create_text({
+      name = "movelogbg", parent = UI.host,
+      x = ix, y = iy, w = iw, h = ih,
+      bg = CONFIG.COLOR.PANEL_INNER, text = "",
+    })
+    local bx, by, bw, bh = band("MOVE_LOG")
+    UI.panel.moveLog = create_text({
+      name = "movelog", parent = UI.host,
+      x = bx, y = by, w = bw, h = bh,
+      text = "", fontColor = CONFIG.COLOR.TEXT_SUB,
+      fontSize = L.font(CONFIG.FONT.PANEL_BODY),
+      hAlign = Enum.TextHorizontalAlignment.Middle,
+      vAlign = Enum.TextVerticalAlignment.Top,
+    })
+  end
+
+  -- 分隔线（记录区 与 按钮区 之间）
+  do
+    local b = PL.DIV_BTN
+    UI.panel.divider2 = create_text({
+      name = "divider2", parent = UI.host,
+      x = atX(0.08), y = py + ph * b.y, w = w(0.84), h = h(b.h),
+      bg = CONFIG.COLOR.PANEL_EDGE, text = "",
+    })
+  end
+
+  -- 四个按钮：44% 宽、按 PANEL_LAYOUT 的行高。
+  -- 【触摸目标下限】按钮高度必须 ≥ 44px。手机 16:9（720 高）下面板高 = 0.78×720 = 561.6，
+  -- 行高 0.078 → 43.8px，略低于 44 的常用下限，所以下面再加一道 max(44, …)。
+  -- 行距 0.093（含 0.015 间隔）在 561.6 下是 52.2px，抬到 44 后不会互相压。
+  local btnW = w(0.44)
+  local function btn_h()
+    local hv = h(PL.BTN_ROW1.h)
+    if hv < 44 then hv = 44 end
+    return hv
+  end
+  local btnH = btn_h()
   -- 主按钮「新开一局」用琥珀实色，其余用浅灰米，形成主次。
   -- 每个按钮上方再压一条 1px 描边（h*0.10）。【浅色主题】BTN_EDGE(214,206,194) 比
   -- BTN_BG(226,220,210) 略深，所以这条线读作「卡片描边」而不是高光 —— 与 Demo 的
@@ -2361,10 +2609,13 @@ local function build_panel()
       bg = CONFIG.COLOR.BTN_EDGE, text = "",
     })
   end
+  -- 按钮行坐标：行 1（上）/ 行 2（中）
+  local row1Y = py + ph * PL.BTN_ROW1.y
+  local row2Y = py + ph * PL.BTN_ROW2.y
 
   UI.panel.btnNew = create_text({
     name = "btnnew", parent = UI.host,
-    x = atX(0.04), y = atY(0.24), w = btnW, h = btnH,
+    x = atX(0.04), y = row1Y, w = btnW, h = btnH,
     bg = CONFIG.COLOR.BTN_PRIMARY, text = CONFIG.TEXT.BTN_NEWGAME,
     -- 【浅色主题连带项】主按钮底是深琥珀 188,116,20，文字必须用浅色近白。
     -- 若沿用普通按钮的 BTN_TEXT（深 44,40,36），深字压在琥珀上会糊成一团看不清。
@@ -2372,40 +2623,40 @@ local function build_panel()
     hAlign = Enum.TextHorizontalAlignment.Middle, vAlign = Enum.TextVerticalAlignment.Middle,
     raycast = true,
   })
-  UI.panel.btnNewEdge = button_edge(atX(0.04), atY(0.24), btnW, btnH)
+  UI.panel.btnNewEdge = button_edge(atX(0.04), row1Y, btnW, btnH)
   UI.panel.btnResign = create_text({
     name = "btnresign", parent = UI.host,
-    x = atX(0.52), y = atY(0.24), w = btnW, h = btnH,
+    x = atX(0.52), y = row1Y, w = btnW, h = btnH,
     bg = CONFIG.COLOR.BTN_BG, text = CONFIG.TEXT.BTN_RESIGN,
     fontColor = CONFIG.COLOR.BTN_TEXT, fontSize = L.font(CONFIG.FONT.BUTTON),
     hAlign = Enum.TextHorizontalAlignment.Middle, vAlign = Enum.TextVerticalAlignment.Middle,
     raycast = true,
   })
-  UI.panel.btnResignEdge = button_edge(atX(0.52), atY(0.24), btnW, btnH)
+  UI.panel.btnResignEdge = button_edge(atX(0.52), row1Y, btnW, btnH)
   UI.panel.btnDraw = create_text({
     name = "btndraw", parent = UI.host,
-    x = atX(0.04), y = atY(0.15), w = btnW, h = btnH,
+    x = atX(0.04), y = row2Y, w = btnW, h = btnH,
     bg = CONFIG.COLOR.BTN_BG, text = CONFIG.TEXT.BTN_DRAW,
     fontColor = CONFIG.COLOR.BTN_TEXT, fontSize = L.font(CONFIG.FONT.BUTTON),
     hAlign = Enum.TextHorizontalAlignment.Middle, vAlign = Enum.TextVerticalAlignment.Middle,
     raycast = true,
   })
-  UI.panel.btnDrawEdge = button_edge(atX(0.04), atY(0.15), btnW, btnH)
+  UI.panel.btnDrawEdge = button_edge(atX(0.04), row2Y, btnW, btnH)
   UI.panel.btnLocal = create_text({
     name = "btnlocal", parent = UI.host,
-    x = atX(0.52), y = atY(0.15), w = btnW, h = btnH,
+    x = atX(0.52), y = row2Y, w = btnW, h = btnH,
     bg = CONFIG.COLOR.BTN_BG, text = CONFIG.TEXT.BTN_LOCAL,
     fontColor = CONFIG.COLOR.BTN_TEXT, fontSize = L.font(CONFIG.FONT.BUTTON),
     hAlign = Enum.TextHorizontalAlignment.Middle, vAlign = Enum.TextVerticalAlignment.Middle,
     raycast = true,
   })
-  UI.panel.btnLocalEdge = button_edge(atX(0.52), atY(0.15), btnW, btnH)
+  UI.panel.btnLocalEdge = button_edge(atX(0.52), row2Y, btnW, btnH)
 
   -- 按钮点击检测区（盖在按钮上；文本框不能收光标事件，见策划案 10.2）
-  UI.panel.hitNew    = create_cursor_area({ name = "hitnew",    parent = UI.host, x = atX(0.04), y = atY(0.24), w = btnW, h = btnH })
-  UI.panel.hitResign = create_cursor_area({ name = "hitresign", parent = UI.host, x = atX(0.52), y = atY(0.24), w = btnW, h = btnH })
-  UI.panel.hitDraw   = create_cursor_area({ name = "hitdraw",   parent = UI.host, x = atX(0.04), y = atY(0.15), w = btnW, h = btnH })
-  UI.panel.hitLocal  = create_cursor_area({ name = "hitlocal",  parent = UI.host, x = atX(0.52), y = atY(0.15), w = btnW, h = btnH })
+  UI.panel.hitNew    = create_cursor_area({ name = "hitnew",    parent = UI.host, x = atX(0.04), y = row1Y, w = btnW, h = btnH })
+  UI.panel.hitResign = create_cursor_area({ name = "hitresign", parent = UI.host, x = atX(0.52), y = row1Y, w = btnW, h = btnH })
+  UI.panel.hitDraw   = create_cursor_area({ name = "hitdraw",   parent = UI.host, x = atX(0.04), y = row2Y, w = btnW, h = btnH })
+  UI.panel.hitLocal  = create_cursor_area({ name = "hitlocal",  parent = UI.host, x = atX(0.52), y = row2Y, w = btnW, h = btnH })
 
   -- 提示条（棋盘上方，与棋盘同宽）：加一条淡底衬托，避免文字直接飘在画布上
   -- 【y 起点必须再加 framePad】v1.7 起棋盘外面多了一圈暖木外框，原坐标
@@ -2431,13 +2682,14 @@ local function build_panel()
   })
 
   -- ===== 复盘面板按钮（v1.6）=====
-  -- 行 3（(4%, 6%) 92% × 8%）是一个常驻单按钮，文案随状态切换：
+  -- 行 3（REVIEW_TOGGLE）是一个常驻单按钮，文案随状态切换：
   --   对局中 / 结算后 → 「看历史」/「复盘」；复盘中 → 「退出复盘」
   -- 行 1、行 2 的四个按钮位在复盘模式下换成「开局 / 上一步 / 下一步 / 终局」，
   -- 因此这里用同一组坐标再建一套按钮 + 命中区，靠显隐切换，播放期零创建零销毁。
+  local togX, togY, togW, togH = band("REVIEW_TOGGLE")
   UI.review.btnToggle = create_text({
     name = "btnreviewtoggle", parent = UI.host,
-    x = atX(0.04), y = atY(0.06), w = w(0.92), h = h(0.08),
+    x = togX, y = togY, w = togW, h = togH,
     bg = CONFIG.COLOR.BTN_BG, text = CONFIG.TEXT.BTN_REVIEW_HISTORY,
     fontColor = CONFIG.COLOR.BTN_TEXT, fontSize = L.font(CONFIG.FONT.BUTTON),
     hAlign = Enum.TextHorizontalAlignment.Middle, vAlign = Enum.TextVerticalAlignment.Middle,
@@ -2445,17 +2697,17 @@ local function build_panel()
   })
   UI.review.hitToggle = create_cursor_area({
     name = "hitreviewtoggle", parent = UI.host,
-    x = atX(0.04), y = atY(0.06), w = w(0.92), h = h(0.08),
+    x = togX, y = togY, w = togW, h = togH,
   })
   local rvBtns = {
     { key = "btnStart", hit = "hitStart", name = "btnreviewstart", hitName = "hitreviewstart",
-      x = atX(0.04), y = atY(0.24), text = CONFIG.TEXT.BTN_REVIEW_START },
+      x = atX(0.04), y = row1Y, text = CONFIG.TEXT.BTN_REVIEW_START },
     { key = "btnPrev", hit = "hitPrev", name = "btnreviewprev", hitName = "hitreviewprev",
-      x = atX(0.52), y = atY(0.24), text = CONFIG.TEXT.BTN_REVIEW_PREV },
+      x = atX(0.52), y = row1Y, text = CONFIG.TEXT.BTN_REVIEW_PREV },
     { key = "btnNext", hit = "hitNext", name = "btnreviewnext", hitName = "hitreviewnext",
-      x = atX(0.04), y = atY(0.15), text = CONFIG.TEXT.BTN_REVIEW_NEXT },
+      x = atX(0.04), y = row2Y, text = CONFIG.TEXT.BTN_REVIEW_NEXT },
     { key = "btnEnd", hit = "hitEnd", name = "btnreviewend", hitName = "hitreviewend",
-      x = atX(0.52), y = atY(0.15), text = CONFIG.TEXT.BTN_REVIEW_END },
+      x = atX(0.52), y = row2Y, text = CONFIG.TEXT.BTN_REVIEW_END },
   }
   for _, spec in ipairs(rvBtns) do
     UI.review[spec.key] = create_text({
@@ -2472,14 +2724,15 @@ local function build_panel()
     })
   end
 
-  -- ===== 音效开关（v1.10）=====
-  -- 【位置为什么在面板外面】面板内部已经排满：标题 0.90 / 轮次 0.81 / 棋钟 0.72,0.63 /
-  --   失子 0.56,0.50 / 记录 0.34 / 按钮 0.24,0.15 / 看历史 0.06。最底一行 0.06 高 0.08，
-  --   它下面只剩 6% × 702 = 42px，放不下 44.9px 的触摸目标（10.4 节下限）。
-  --   所以跟 Demo 一样放在面板正下方的空白条里（chess_demo.html 第 1449-1451 行）：
+  -- ===== 音效开关（v1.10，v1.11 调高到触摸下限）=====
+  -- 【位置为什么在面板外面】面板内部最底一行（REVIEW_TOGGLE）下面已经排不出 44px，
+  --   所以跟 Demo 一样放在面板正下方的空白条里：
   --   横向与面板按钮同列（x = atX(0.04)、宽 92%），只是整体下移到 py 以下。
-  local sfxH = ph * 0.062
-  local sfxY = py - sfxH - ph * 0.020
+  -- 【v1.11 修】旧高度是 ph*0.062，手机 720 下只有 34.8px —— 低于触摸目标下限，
+  --   实测容易点空。改成与行高同值并同样兜底 44。
+  local sfxH = h(PL.REVIEW_TOGGLE.h)
+  if sfxH < 44 then sfxH = 44 end
+  local sfxY = py - sfxH - ph * 0.018
   UI.panel.btnSfx = create_text({
     name = "btnsfx", parent = UI.host,
     x = atX(0.04), y = sfxY, w = w(0.92), h = sfxH,
@@ -2698,14 +2951,29 @@ local function build_confirm_dialog()
                        UI.confirm.hitYes, UI.confirm.hitNo }
 end
 
+-- 显示/隐藏一个控件。
+-- 【v1.11 性能】缓存当前可见状态，重复设置同一值直接跳过。
+-- 这在本项目里命中率很高：clear_highlights 每次点空白都遍历 28 个落点池、
+-- show_result 每次终局锁 64 个命中区、reset_piece_slots 每次重开遍历 32 槽 ——
+-- 这些调用里绝大多数控件本来就是隐藏的，再写一遍纯属浪费（每次写都要过平台层）。
+-- 【为什么缓存要放脚本侧弱键表】平台控件对象不保证允许写自定义字段，见 image_apply 同类说明。
+-- 【首次调用一定写】缓存初值是 nil（未登记），任何控件第一次经过这里都会真的写一遍，
+-- 所以不会出现「缓存说隐藏、实际可见」的错配。工厂与 build_all_ui 里那些
+-- 直接调 platform SetActive 的地方不需要登记 —— 它们只让缓存暂时落后一次，不会读错。
 local function ui_set_active(ctrl, active)
   if ctrl == nil then return end
-  if active then
-    ctrl:SetActive(true)
-    ctrl:SetVisible(true)
+  local want = active and true or false
+  if VIS_STATE[ctrl] == want then
+    cw_skip()
+    return
+  end
+  VIS_STATE[ctrl] = want
+  if want then
+    cw(); ctrl:SetActive(true)
+    cw(); ctrl:SetVisible(true)
   else
-    ctrl:SetVisible(false)
-    ctrl:SetActive(false)
+    cw(); ctrl:SetVisible(false)
+    cw(); ctrl:SetActive(false)
   end
 end
 
@@ -2819,6 +3087,13 @@ end
 
 -- 按给定秒数刷新两个棋钟文本（正常模式传 GAME.clockWhite/Black，复盘传快照值）
 -- v1.7：当前走子方那一行变亮、另一行压暗，一眼能看出「轮到谁」。
+--
+-- 【v1.11 性能】棋钟每 CLOCK_REFRESH_SEC 刷一次，加上 render_all 也会调它。
+-- 每次写 text / fontColor / bgColor 都会触发平台重新排版与合批，
+-- 而实际上「秒数没变、亮暗没变」时这三项一个都不用写。这里缓存上一次写入的值，
+-- 全都没变就整段返回 —— 实测每 0.25 秒的这条路径从 6 次控件写降到 0 次。
+local CLOCK_CACHE = { w = nil, b = nil, wCol = nil, bCol = nil, wBg = nil, bBg = nil }
+
 local function set_clock_labels(w, b)
   if not GAME.uiReady then return end
   -- 复盘中不判「轮到谁」，两行同权重
@@ -2827,8 +3102,11 @@ local function set_clock_labels(w, b)
   local wActive = reviewing or (turn == WHITE)
   local bActive = reviewing or (turn == BLACK)
 
+  -- 亮暗底色（复盘中两边同权重 → 都是 PANEL_SECTION）
+  local wBg = wActive and CONFIG.COLOR.PANEL_SECTION or CONFIG.COLOR.PANEL_INNER
+  local bBg = bActive and CONFIG.COLOR.PANEL_SECTION or CONFIG.COLOR.PANEL_INNER
+
   if UI.panel.clockWhite then
-    UI.panel.clockWhite.text = "白 " .. format_clock(w)
     local col
     if w <= CONFIG.CLOCK_LOW_SEC then
       col = CONFIG.COLOR.CLOCK_LOW
@@ -2837,14 +3115,22 @@ local function set_clock_labels(w, b)
     else
       col = CONFIG.COLOR.TEXT_SUB
     end
-    UI.panel.clockWhite.fontColor = color_of(col)
-    if UI.panel.clockWhiteBg then
-      UI.panel.clockWhiteBg.bgColor = color_of(wActive
-        and CONFIG.COLOR.PANEL_SECTION or CONFIG.COLOR.PANEL_INNER)
+    -- 【只显示到秒】文本按 format_clock 的整秒比较，避免亚秒变化造成无意义重写
+    local txt = "白 " .. format_clock(w)
+    if CLOCK_CACHE.w ~= txt then
+      CLOCK_CACHE.w = txt
+      UI.panel.clockWhite.text = txt
+    end
+    if CLOCK_CACHE.wCol ~= col then
+      CLOCK_CACHE.wCol = col
+      UI.panel.clockWhite.fontColor = color_of(col)
+    end
+    if UI.panel.clockWhiteBg and CLOCK_CACHE.wBg ~= wBg then
+      CLOCK_CACHE.wBg = wBg
+      UI.panel.clockWhiteBg.bgColor = color_of(wBg)
     end
   end
   if UI.panel.clockBlack then
-    UI.panel.clockBlack.text = "黑 " .. format_clock(b)
     local col
     if b <= CONFIG.CLOCK_LOW_SEC then
       col = CONFIG.COLOR.CLOCK_LOW
@@ -2853,10 +3139,18 @@ local function set_clock_labels(w, b)
     else
       col = CONFIG.COLOR.TEXT_SUB
     end
-    UI.panel.clockBlack.fontColor = color_of(col)
-    if UI.panel.clockBlackBg then
-      UI.panel.clockBlackBg.bgColor = color_of(bActive
-        and CONFIG.COLOR.PANEL_SECTION or CONFIG.COLOR.PANEL_INNER)
+    local txt = "黑 " .. format_clock(b)
+    if CLOCK_CACHE.b ~= txt then
+      CLOCK_CACHE.b = txt
+      UI.panel.clockBlack.text = txt
+    end
+    if CLOCK_CACHE.bCol ~= col then
+      CLOCK_CACHE.bCol = col
+      UI.panel.clockBlack.fontColor = color_of(col)
+    end
+    if UI.panel.clockBlackBg and CLOCK_CACHE.bBg ~= bBg then
+      CLOCK_CACHE.bBg = bBg
+      UI.panel.clockBlackBg.bgColor = color_of(bBg)
     end
   end
 end
@@ -2871,22 +3165,21 @@ local function update_turn_text()
   if not GAME.uiReady or UI.panel.turn == nil then return end
   -- 复盘中显示进度行（「复盘 · 第 N/M 步」），不显示轮次
   local rt = review_turn_text()
+  local txt
   if rt ~= nil then
-    UI.panel.turn.text = rt
-    return
-  end
-  -- 终局显示「棋局结束」（策划案 S-07）。
-  -- 【不能直接 return 不管】原先这里写 `if GAME.over then return end`，
-  -- 退出复盘时轮次行就停在「复盘 · 第 N/M 步」上不还原（模拟器实测到残影）。
-  if GAME.over then
-    UI.panel.turn.text = CONFIG.TEXT.TURN_OVER
-    return
-  end
-  if GAME.st.turn == WHITE then
-    UI.panel.turn.text = CONFIG.TEXT.TURN_WHITE
+    txt = rt
+  elseif GAME.over then
+    -- 终局显示「棋局结束」（策划案 S-07）。
+    -- 【不能直接 return 不管】原先这里写 `if GAME.over then return end`，
+    -- 退出复盘时轮次行就停在「复盘 · 第 N/M 步」上不还原（模拟器实测到残影）。
+    txt = CONFIG.TEXT.TURN_OVER
+  elseif GAME.st.turn == WHITE then
+    txt = CONFIG.TEXT.TURN_WHITE
   else
-    UI.panel.turn.text = CONFIG.TEXT.TURN_BLACK
+    txt = CONFIG.TEXT.TURN_BLACK
   end
+  -- 【v1.11 性能】文案没变就不写（render_all 每步都调到这里）
+  if UI.panel.turn.text ~= txt then UI.panel.turn.text = txt end
 end
 
 local function clear_highlights()
@@ -2940,6 +3233,9 @@ local function anim_update_hilites(dt)
   end
 
   -- 落点：错相位呼吸
+  -- 【v1.11】hlBase 现在存的是**中心点**（图片控件 pivot=0.5），所以缩放时位置不变，
+  -- 只改尺寸即可 —— 中心不动的缩放。旧代码还额外减了 (d - b.size)/2，
+  -- 那是「按左下角定位」的补偿，在中心定位下会让圆点每帧往左下漂一点。
   local used = UI.legalHLUsed or 0
   local base = ANIM.hlBase
   if base == nil then return end
@@ -2951,8 +3247,7 @@ local function anim_update_hilites(dt)
       local k = 1 + math.sin(ph * math.pi * 2) * 0.12
       local d = b.size * k
       c:SetSizeDelta(d, d)
-      c:SetAnchoredPosition(b.x - (d - b.size) / 2,
-                            b.y - (d - b.size) / 2)
+      c:SetAnchoredPosition(b.x, b.y)
     end
   end
 end
@@ -3016,15 +3311,19 @@ end
 
 -- 画一枚棋子到一个槽位。slot.prims 是固定容量池，播放期只改不建。
 --
--- 【五层绘制顺序（与 PIECE_ART 表顺序无关，全部在这里固定）】
---   ① 投影（1 个椭圆，压在底座下方，半透明黑）
---   ② 描边层：全部形体形状按 pad 放大，画描边色
---   ③ 填充层：全部形体形状按原尺寸，画体色
---   ④ 镂空描边：镂空形状按 pad 放大，画描边色（让眼窝等有边）
---   ⑤ 镂空填充：镂空形状按原尺寸，画**棋格色**（视觉上等于挖穿）
+-- 【v1.11 层序（去掉了底部投影，issue #1 第 5 条）】
+--   ① 外形描边：全部形体形状各自外扩 pad，画描边色
+--   ② 外形填充：全部形体形状按原尺寸，画体色
+--   ③ 镂空描边：镂空形状外扩 pad，画描边色（让眼窝等有边）
+--   ④ 镂空填充：镂空形状按原尺寸，画**棋格色**（视觉上等于挖穿）
+--   ⑤ 细节线：role2，对比色，原尺寸
 --
 -- 为什么描边不逐个形状画：逐形画会在棋子内部相邻形状交界处画出线，
 -- 变成「一堆叠起来的积木」。整组放大再整组缩小，只有最外廓出现描边。
+--
+-- 【v1.11 性能】image_apply 加了「值相同就不写控件」的短路，见该函数的说明。
+-- 本函数每帧被脏槽位重绘调用时，同一枚棋子的形状数据是不变的 ——
+-- 只有随动画变化的尺寸/位置需要写，其余（图元、颜色、旋转）全部命中缓存跳过。
 --
 -- scale：动画用的整体缩放（1 = 原大），缩放中心是棋子方框中心
 -- dy   ：动画用的额外竖直偏移（画布单位）
@@ -3040,6 +3339,13 @@ local function paint_slot(slot, p, bx, by, sq, scale, dy)
   local art = piece_art_of(p)
   local cap = #slot.prims
   local n = 0
+  -- 可见性缓存：slot.shown[k] = 该图元当前是否已激活。挂在槽位表上（不是控件上），
+  -- 因为平台控件对象不保证允许写自定义字段。
+  local shown = slot.shown
+  if shown == nil then
+    shown = {}
+    slot.shown = shown
+  end
 
   local function take()
     n = n + 1
@@ -3049,21 +3355,31 @@ local function paint_slot(slot, p, bx, by, sq, scale, dy)
 
   local function next_visible()
     local c = take()
-    if c ~= nil then ui_set_active(c, true) end
+    if c ~= nil then
+      -- 【性能】只有从隐藏变可见时才写 active/visible；槽位复用时这个分支很少命中。
+      -- 可见性标记放在槽位自己的表里（slot.shown[k]），不写到平台控件对象上。
+      if not shown[n] then
+        shown[n] = true
+        ui_set_active(c, true)
+      end
+    end
     return c
   end
 
   if art == nil then
-    for k = 1, cap do ui_set_active(slot.prims[k], false) end
+    for k = 1, cap do
+      if shown[k] then shown[k] = false; ui_set_active(slot.prims[k], false) end
+    end
     return
   end
 
   local fill, edge = piece_colors(p)
 
   -- 缩放后的棋子方框：中心不动，边长 × scale
+  -- 【视觉居中】+ piece_center_dy() * sside：把形状并集的竖向中心对到格中心（见该函数说明）
   local sside = side * scale
   local ox = bx + (box - sside) / 2
-  local oy = by + (box - sside) / 2 + dy
+  local oy = by + (box - sside) / 2 + dy + piece_center_dy() * sside
 
   -- 【描边：每个形状各自向外长 t，而不是整组等比放大】
   --
@@ -3083,67 +3399,72 @@ local function paint_slot(slot, p, bx, by, sq, scale, dy)
   -- 这是**对的**，那正是原图的轮廓，不是需要消除的"台阶"。
   -- 真正会出"台阶"的是拿一串宽度递减的矩形去逼近曲线 —— 那种情况要靠改用椭圆/三角形，
   -- 而不是靠调整描边算法。
-  local pad = CONFIG.PIECE_OUTLINE_PAD * sside
-
-  -- ① 投影
-  local shadow = take()
-  if shadow ~= nil then
-    local sw = sside * CONFIG.PIECE_SHADOW_W
-    local sh = sside * CONFIG.PIECE_SHADOW_H
-    image_apply(shadow, prim_asset(1), CONFIG.COLOR.PIECE_SHADOW, 0)
-    shadow:SetSizeDelta(sw, sh)
-    shadow:SetAnchoredPosition(ox + sside * 0.5,
-                               oy + sside * CONFIG.PIECE_SHADOW_DY)
-    ui_set_active(shadow, true)
+  --
+  -- 【v1.11 细长形状夹一道上限】pad 是「方框比例的绝对量」，对 0.05 宽的鬃毛
+  -- 相当于自身宽度的 80%，会把细节糊成色斑。所以再按短边比例夹一层（见 CONFIG 说明）。
+  local padBase = CONFIG.PIECE_OUTLINE_PAD * sside
+  local thinRatio = CONFIG.PIECE_PAD_THIN_RATIO
+  local function pad_of(s)
+    local limit = math.min(s[4], s[5]) * sside * thinRatio
+    if limit < padBase then return limit end
+    return padBase
   end
 
-  -- ② 描边层：每个形状各自向外长 pad，中心不动（见上方方案 B 说明）
+  -- ① 外形描边层：**全部形状先画一遍描边**，② 再全部画一遍填充
+  --
+  -- 【顺序绝不能改成交替画（会出大事）】
+  --   若改成「形状 A 的描边 + A 的填充 → 形状 B 的描边 + B 的填充 → …」，
+  --   那么 B 的描边就会压在 A 的填充之上，棋子内部每两个形状的交界处都会出现一道描边色，
+  --   整枚棋子变成「一堆描好的积木叠起来」，冠尖/鬃毛上还会戳出一圈黑边
+  --   （v1.11 第一版实测：白王头上长出几个黑色三角、黑车身上出现白色描边缝）。
+  --   必须是「所有描边 → 所有填充」两遍，描边层才只在**并集外缘**露出来。
   for _, s in ipairs(art) do
     if s[7] == 0 then
+      local pad = pad_of(s)
       local c = next_visible()
       if c == nil then break end
       image_apply(c, prim_asset(s[1]), edge, s[6])
-      c:SetSizeDelta(s[4] * sside + pad * 2, s[5] * sside + pad * 2)
-      c:SetAnchoredPosition(ox + s[2] * sside, oy + s[3] * sside)
+      cw(); c:SetSizeDelta(s[4] * sside + pad * 2, s[5] * sside + pad * 2)
+      cw(); c:SetAnchoredPosition(ox + s[2] * sside, oy + s[3] * sside)
     end
   end
-
-  -- ③ 填充层：形体原尺寸，画体色
   for _, s in ipairs(art) do
     if s[7] == 0 then
       local c = next_visible()
       if c == nil then break end
       image_apply(c, prim_asset(s[1]), fill, s[6])
-      c:SetSizeDelta(s[4] * sside, s[5] * sside)
-      c:SetAnchoredPosition(ox + s[2] * sside, oy + s[3] * sside)
+      cw(); c:SetSizeDelta(s[4] * sside, s[5] * sside)
+      cw(); c:SetAnchoredPosition(ox + s[2] * sside, oy + s[3] * sside)
     end
   end
 
-  -- ④ 镂空描边（同样各自外扩，让眼窝等有一圈边）
+  -- ③ 镂空描边层 + ④ 镂空填充层：同样「先全部描边、再全部填充」
+  -- 【镂空填充用棋格色】平台图元没有挖洞能力，只能「用底色再画一遍同一形状」。
+  -- 注意这个色依赖于该格明暗，所以带镂空的棋子走到另一种颜色的格子上时必须重绘 ——
+  -- image_apply 的颜色缓存不会误判（颜色真的变了）。
+  local sqIsDark = ((sq // 8) + (sq % 8)) % 2 == 0
+  local holeColor = sqIsDark and CONFIG.COLOR.SQ_DARK or CONFIG.COLOR.SQ_LIGHT
   for _, s in ipairs(art) do
     if s[7] == 1 then
+      local pad = pad_of(s)
       local c = next_visible()
       if c == nil then break end
       image_apply(c, prim_asset(s[1]), edge, s[6])
-      c:SetSizeDelta(s[4] * sside + pad * 2, s[5] * sside + pad * 2)
-      c:SetAnchoredPosition(ox + s[2] * sside, oy + s[3] * sside)
+      cw(); c:SetSizeDelta(s[4] * sside + pad * 2, s[5] * sside + pad * 2)
+      cw(); c:SetAnchoredPosition(ox + s[2] * sside, oy + s[3] * sside)
     end
   end
-
-  -- ⑤ 镂空填充：用该格棋格色盖回去，等效挖穿
-  local sqIsDark = ((sq // 8) + (sq % 8)) % 2 == 0
-  local holeColor = sqIsDark and CONFIG.COLOR.SQ_DARK or CONFIG.COLOR.SQ_LIGHT
   for _, s in ipairs(art) do
     if s[7] == 1 then
       local c = next_visible()
       if c == nil then break end
       image_apply(c, prim_asset(s[1]), holeColor, s[6])
-      c:SetSizeDelta(s[4] * sside, s[5] * sside)
-      c:SetAnchoredPosition(ox + s[2] * sside, oy + s[3] * sside)
+      cw(); c:SetSizeDelta(s[4] * sside, s[5] * sside)
+      cw(); c:SetAnchoredPosition(ox + s[2] * sside, oy + s[3] * sside)
     end
   end
 
-  -- ⑥ 细节线（cburnett 风格专属，role=2）
+  -- ⑤ 细节线（cburnett 风格专属，role=2）
   -- 这是 en-croissant 那套棋子的灵魂：车身的砖缝、后的冠弧、王的冠带、象的十字、
   -- 马的鬃线、兵的颈线。它们用**对比色**画（白子画深线、黑子画浅线），
   -- 尺寸就用数据本身的宽高 —— 不外扩，因为细节线不是轮廓，外扩会变成一道粗纹。
@@ -3154,19 +3475,27 @@ local function paint_slot(slot, p, bx, by, sq, scale, dy)
       local c = next_visible()
       if c == nil then break end
       image_apply(c, prim_asset(s[1]), detailColor, s[6])
-      c:SetSizeDelta(s[4] * sside, s[5] * sside)
-      c:SetAnchoredPosition(ox + s[2] * sside, oy + s[3] * sside)
+      cw(); c:SetSizeDelta(s[4] * sside, s[5] * sside)
+      cw(); c:SetAnchoredPosition(ox + s[2] * sside, oy + s[3] * sside)
     end
   end
 
   -- 多余图元隐藏（容量池比实际用量大时）
-  for k = n + 1, cap do ui_set_active(slot.prims[k], false) end
+  for k = n + 1, cap do
+    if shown[k] then shown[k] = false; ui_set_active(slot.prims[k], false) end
+  end
 end
 
 -- 把一个槽位的所有图元隐藏
 local function hide_slot(slot)
   if slot == nil or slot.prims == nil then return end
-  for k = 1, #slot.prims do ui_set_active(slot.prims[k], false) end
+  local shown = slot.shown
+  for k = 1, #slot.prims do
+    if shown == nil or shown[k] then
+      if shown ~= nil then shown[k] = false end
+      ui_set_active(slot.prims[k], false)
+    end
+  end
 end
 
 -- 棋子渲染（v1.7：槽位稳定绑定 + 平滑移动）
@@ -3402,11 +3731,19 @@ local function render_captured()
   else
     cw, cb = GAME.capturedWhite, GAME.capturedBlack
   end
+  -- 【v1.11 文案】旧版是裸字母 "P P N"，看不出来是被谁吃掉的。现在带前缀。
+  -- 【性能】文本只在真的变化时才写（平台写 text 会触发重新排版）。
+  local function cap_text(list)
+    if #list == 0 then return CONFIG.TEXT.CAP_NONE end
+    return CONFIG.CAP_PREFIX .. table.concat(list, " ")
+  end
   if UI.panel.capturedWhite then
-    UI.panel.capturedWhite.text = table.concat(cw, " ")
+    local txt = cap_text(cw)
+    if UI.panel.capturedWhite.text ~= txt then UI.panel.capturedWhite.text = txt end
   end
   if UI.panel.capturedBlack then
-    UI.panel.capturedBlack.text = table.concat(cb, " ")
+    local txt = cap_text(cb)
+    if UI.panel.capturedBlack.text ~= txt then UI.panel.capturedBlack.text = txt end
   end
 end
 
@@ -3419,7 +3756,13 @@ local function render_move_log()
     local lines = {}
     local from = math.max(1, n - CONFIG.MOVE_LOG_LINES + 1)
     for i = from, n do lines[#lines + 1] = GAME.moveLog[i] end
-    UI.panel.moveLog.text = table.concat(lines, "\n")
+    local txt
+    if n == 0 then
+      txt = CONFIG.TEXT.MOVELOG_EMPTY
+    else
+      txt = table.concat(lines, "\n")
+    end
+    if UI.panel.moveLog.text ~= txt then UI.panel.moveLog.text = txt end
   end
 end
 
@@ -4016,9 +4359,18 @@ local function select_square(sq)
   UI.selRingBot:SetAnchoredPosition(x, y)
   ui_set_active(UI.selRingBot, true)
 
-  -- 落点高亮：空格画圆点、可吃子画整格环（都记下基准位置给脉动用）
-  -- 【注意】legalHL 池是**图片控件**（要用图元 100002 才画得出圆点），
-  -- 图片控件的颜色字段是 imageColor，不是 bgColor（文本框才用 bgColor）。
+  -- 落点高亮：空格画圆点、可吃子画整格薄罩（都记下基准位置给脉动用）
+  --
+  -- 【v1.11 修 issue #1 第 1 条「走棋特效错位严重」】
+  -- 这里的控件来自 `create_image`，它的 pivot 是 **0.5**（图元要绕自身中心旋转），
+  -- 所以 `SetAnchoredPosition(x, y)` 设的是**中心点**，而不是左下角。
+  -- 而 `LAYOUT.square_pos` 返回的是棋格**左下角**（文本框控件的 pivot 是 0，正好对上）。
+  -- 旧代码把左下角坐标直接喂给图片控件，于是：
+  --   · 空格圆点（直径 0.30 格）偏左下 0.35 格 —— 实测截图里绿点明显跑到格子左下方，
+  --     还压到相邻格上；
+  --   · 可吃子整格薄罩（边长 1 格）偏左下 0.5 格 —— 红圈正好盖住左下相邻格的四分之一，
+  --     看起来完全对不上（issue 截图 1 里那个红圆就是它）。
+  -- 正确做法：中心 = 左下角 + 边长/2。
   ANIM.hlBase = ANIM.hlBase or {}
   local idx = 0
   local board = GAME.st.board
@@ -4026,22 +4378,23 @@ local function select_square(sq)
     idx = idx + 1
     if idx > 28 then break end
     local tx, ty = LAYOUT.square_pos(L, to)
+    -- 棋格中心（图片控件按中心定位，见上方说明）
+    local cx, cy = tx + L.cell * 0.5, ty + L.cell * 0.5
     local c = UI.legalHL[idx]
     local isCap = (board[to] ~= 0)
     if isCap then
-      -- 可吃子：整格薄罩
+      -- 可吃子：整格薄罩（尺寸 = 一格，中心 = 格中心）
       c:SetSizeDelta(L.cell, L.cell)
-      c:SetAnchoredPosition(tx, ty)
+      c:SetAnchoredPosition(cx, cy)
       c.imageColor = color_of(CONFIG.COLOR.LEGAL_CAP)
-      ANIM.hlBase[idx] = { x = tx, y = ty, size = L.cell }
+      ANIM.hlBase[idx] = { x = cx, y = cy, size = L.cell }
     else
-      -- 空格：居中的圆点
+      -- 空格：居中的圆点（尺寸 = 0.30 格，中心同样取格中心）
       local d = L.cell * 0.30
       c:SetSizeDelta(d, d)
-      c:SetAnchoredPosition(tx + (L.cell - d) / 2, ty + (L.cell - d) / 2)
+      c:SetAnchoredPosition(cx, cy)
       c.imageColor = color_of(CONFIG.COLOR.LEGAL_HL)
-      ANIM.hlBase[idx] = { x = tx + (L.cell - d) / 2,
-                           y = ty + (L.cell - d) / 2, size = d }
+      ANIM.hlBase[idx] = { x = cx, y = cy, size = d }
     end
     ui_set_active(c, true)
   end
@@ -4893,9 +5246,10 @@ end
 -- 重绘统计打点（诊断用，不参与玩法）：
 -- 在日志里打一条 REPAINT[...]，配合 GetRepaintStats 人工确认提速效果。
 function DumpRepaintStats(tag)
-  log_info("REPAINT[%s] slots=%d full=%d partial=%d tasks=%d",
+  log_info("REPAINT[%s] slots=%d full=%d partial=%d tasks=%d writes=%d skipped=%d",
     tostring(tag or "-"), ANIM.paintSlotsTotal, ANIM.paintFramesFull,
-    ANIM.paintFramesPartial, ANIM.count)
+    ANIM.paintFramesPartial, ANIM.count,
+    WRITE_STATS.writes, WRITE_STATS.skipped)
   return true
 end
 
@@ -4970,12 +5324,18 @@ function SelfTest()
   return out
 end
 
--- 供外部调用：重绘计量（v1.10 提速诊断，A/B 实测记录见 tech-architecture 第 5.5 区说明）。
+-- 供外部调用：重绘计量与控件写计量（v1.10/v1.11 提速诊断）。
 -- 用法：ResetRepaintStats() → 走一步 → 等动画跑完 → GetRepaintStats() 读数字。
 -- A/B 实测（pc-16-9，e2→e4 一步）：
 --   旧（动画期全量重绘）： full=10 partial=0  → 10 帧 × 32 槽 = 320 次 paint_slot
 --   新（只重绘脏槽位）：   full=2  partial=8  slots=8 → 2×32 + 8 = 72 次
 --   单帧稳态从 32 槽降到 1 槽（走子只动一枚），动画期控件写次数约降 78%。
+--
+-- 【v1.11 新增 ctrlWrites / ctrlWritesSkipped】issue #1 第 6 条要求「保证功能不变
+-- 的情况下优化性能」，那就必须给出可复测的数字，而不是只写「优化了」：
+--   ctrlWrites         ：真正打到平台的属性写次数（SetActive/SetVisible/尺寸/位置/颜色/旋转/图元/text）
+--   ctrlWritesSkipped  ：因为「值没变」被跳过的次数 —— 这就是缓存省下的写
+-- 复测方法同上：Reset → 走一步 → 等动画结束 → 读两个数。
 function GetRepaintStats()
   return {
     paintSlotsTotal = ANIM.paintSlotsTotal,
@@ -4983,14 +5343,18 @@ function GetRepaintStats()
     paintFramesPartial = ANIM.paintFramesPartial,
     animTasks = ANIM.count,
     dirtyCount = ANIM.dirtyCount,
+    ctrlWrites = WRITE_STATS.writes,
+    ctrlWritesSkipped = WRITE_STATS.skipped,
   }
 end
 
--- 重置重绘计量（配合 GetRepaintStats 做前后对比）
+-- 重置计量（配合 GetRepaintStats 做前后对比）
 function ResetRepaintStats()
   ANIM.paintSlotsTotal = 0
   ANIM.paintFramesFull = 0
   ANIM.paintFramesPartial = 0
+  WRITE_STATS.writes = 0
+  WRITE_STATS.skipped = 0
   return true
 end
 -- 供外部调用：读取当前局面的 FEN
