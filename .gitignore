@@ -41,3 +41,8 @@ tools_work/issue1/crop_*.png
 tools_work/issue1/zoom_*.png
 tools_work/issue1/pc-*.png
 tools_work/issue1/mobile-*.png
+
+# ===== 一键导入包（250KB 二进制，由 qxqy_studio_export 可重新生成）=====
+# 保留：GIA 本体 + 导入指南（用户要直接拿走的东西）
+# 说明：GIA 是二进制，diff 无意义；删了可用下面的命令重生成
+#   qxqy_studio_export { format: "gia-combined", path: "out/交付包/chess-整合包.gia" }
