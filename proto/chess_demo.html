@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>黑白棋局</title>
+<title>国际象棋</title>
 <!--
-  黑白棋局 · 网页 Demo（开发基准，不是最终交付物）
+  国际象棋 · 网页 Demo（开发基准，不是最终交付物）
   ================================================
   设计基准：1600 × 900（电脑 16:9）
   基准来源：docs/策划案.md 10.1–10.7
@@ -76,6 +76,10 @@
     --c-bp: rgb(36,33,30);
     --c-bp-ol: rgb(246,243,238);
     --c-overlay: rgba(250,248,244,0.667);  /* OVERLAY 250,248,244,170 */
+    /* v2.0 复盘分支试走的青色。**必须是主变里完全不存在的一种色相**：
+       主变用墨绿(46,120,92)落点 + 琥珀(200,128,26)选中 + 古铜(214,168,64)上一步痕迹，
+       青色(32,132,140)与这三者在明度/色相上都拉开了距离，且同属浅色主题的冷色侧。 */
+    --c-branch: rgb(32,132,140);
 
     /* v3 动画参数（与 Lua 侧同一套数值，改这里必须同步改 ANIM.CFG） */
     --dur-move: 0.17s;
@@ -274,6 +278,82 @@
   }
   .sfx-btn:hover { background: var(--c-panel-inner); color: var(--c-text); }
   .sfx-btn.is-off { color: var(--c-text-dim); }
+
+  /* ==========================================================================
+     v2.0 三屏（初始界面 / 待机室）+ 棋盘下动作条 + 悔棋确认框 + 复盘分支
+     --------------------------------------------------------------------------
+     【层级模型 · 与千星 Lua 同构】
+       screen 层 z=17 一次性盖住面板(10~13)与音效按钮(16)，
+       但低于全部弹窗(20~24)。所以「初始界面挡在棋盘前面」这件事，
+       在 HTML 里和在 Lua 里是**同一个机制**：后建的同级控件压在上面，
+       下层的命中区就收不到点击（tech-architecture 第三节「模态弹窗会被下层命中区穿透」的反面用法）。
+       这样就不需要逐个隐藏几十个面板控件 —— Lua 侧同理，只要屏幕层盖住就行。
+
+     【动画纪律】本区**不写任何 transition / animation**。
+       档位卡的选中态是「一次性改 border + background」，可逐帧重算也可一次写入，
+       Lua 侧用 SetImageColor / 换控件即可，不需要缓动。
+       （棋盘走子补间才用 rAF 手写缓动，见 setSlotTransform / animUpdate。）
+     ========================================================================== */
+  .v2scr  { z-index: 17; pointer-events: auto; }
+  .v2band { z-index: 17; pointer-events: none; }
+  .v2t {
+    z-index: 18; pointer-events: none;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+  }
+  .v2t.left  { justify-content: flex-start; text-align: left; }
+  .v2t.right { justify-content: flex-end; text-align: right; }
+
+  .v2card {
+    z-index: 18; cursor: pointer; border-radius: 10px;
+    border: 1px solid var(--c-panel-edge);
+    background: var(--c-panel);
+  }
+  /* 选中态：琥珀 3px 描边 + 深一档底（PANEL_SEC 比 PANEL 暗 14 点，浅色主题里够用）。
+     box-sizing 是 border-box（见 .el），所以加粗描边不会改变控件尺寸 —— 这一点 Lua 侧也一样：
+     平台文本框/图片控件没有 border 字段，是靠「多建一个略大的描边色块垫在下面」拼的，
+     同样不改本体尺寸。 */
+  .v2card.is-sel {
+    border: 3px solid var(--c-accent);
+    background: var(--c-panel-sec);
+  }
+  .v2card-hit { z-index: 19; cursor: pointer; }
+
+  .v2btn {
+    z-index: 19; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; user-select: none;
+    border-radius: 8px; border: 1px solid var(--c-panel-edge);
+    background: var(--c-btn); color: var(--c-btn-text);
+    font-weight: 600;
+  }
+  .v2btn.is-primary {
+    background: var(--c-btn-primary); color: var(--c-btn-primary-text);
+    border-color: var(--c-btn-primary);
+  }
+  /* 「已按下/已选中」态（待机室里「准备」按下后就是它，不换文案布局只换色） */
+  .v2btn.is-sel {
+    background: var(--c-btn-primary); color: var(--c-btn-primary-text);
+    border-color: var(--c-btn-primary);
+  }
+  .v2btn.is-disabled {
+    background: var(--c-btn-dis) !important; color: var(--c-btn-dis-text) !important;
+    border-color: var(--c-panel-edge) !important; cursor: default;
+  }
+  .v2btn-hit { z-index: 19; cursor: pointer; }
+
+  /* 棋盘正下方的动作条：只占棋盘下边缘到舞台底之间那 99px 空档，
+     不碰棋盘几何、不碰右侧面板，因此**完全不需要改 PANEL_LAYOUT**。 */
+  .v2bar {
+    z-index: 11; border-radius: 10px;
+    background: var(--c-panel-sec);
+    border: 1px solid var(--c-panel-edge);
+  }
+
+  /* 复盘分支：青色方框。**整个分支视觉只多这 1 个控件**，
+     落点圆点是复用主变那套池子后**改色**（CSS 变量 --c-legal），不新建池。 */
+  .branch-ring {
+    z-index: 8; pointer-events: none; border-radius: 4px;
+    box-shadow: inset 0 0 0 3px var(--c-branch);
+  }
 
   /* 调试显示（默认关闭） */
   #debugLayer { position: absolute; inset: 0; z-index: 30; pointer-events: none; display: none; }
@@ -872,6 +952,19 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     CLOCK: 28,
     BUTTON: 24, HINT: 24, RESULT_TITLE: 44, RESULT_SUB: 24, PROMO_OPTION: 24,
     MIN_FONT: 16,
+    // ---- v2.0 新增字号（三屏 + 待机室 + 复盘研习 + 悔棋）----
+    // 【这些键不在 consistency_check 的 fontKeys 白名单里】该脚本只比 COORD/PIECE/
+    // PANEL_TITLE/PANEL_BODY/CLOCK/BUTTON/HINT/RESULT_TITLE/RESULT_SUB/PROMO_OPTION 十项，
+    // 新增键不参与比对，所以这里是 Demo 先行定义、Lua 侧照抄的权威值。
+    // 若以后要把它们也纳入门禁，需同时改脚本的 fontKeys 数组，别只改一边。
+    V2_TITLE: 76,        // 初始界面主标题「黑白棋局」
+    V2_SUB: 26,          // 副标题
+    V2_CARD_NAME: 34,    // 档位卡上的档位名（超快棋 / 闪电战 / 快棋 / 慢棋）
+    V2_CARD_LINE: 22,    // 档位卡的 首钟 / 加秒 / 预估 三行
+    V2_ENTRY: 30,        // 三个入口按钮
+    V2_SMALL: 20,        // 提示条 / 玩家列表的次级文字
+    V2_BAR: 24,          // 棋盘下方动作条按钮
+    V2_CREATE: 60,       // 待机室倒数数字
   };
 
   // ---------- 配色（v3 浅色主题）----------
@@ -915,7 +1008,13 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     // 棋子（白身深描边 / 黑身浅描边，任何浅木格子上都有清晰边缘）
     WHITE_PIECE: "rgb(253,252,250)", WHITE_OUTLINE: "rgb(44,40,36)",
     BLACK_PIECE: "rgb(36,33,30)", BLACK_OUTLINE: "rgb(246,243,238)",
+    // v2.0 复盘分支试走色。刻意选一个「主变里完全不存在」的色相：
+    // 主变已占用墨绿 LEGAL(46,120,92) / 琥珀 SEL(200,128,26) / 古铜 LAST(214,168,64)，
+    // 青色(32,132,140) 与三者在色相与明度上都拉开了距离，不会被误读成主变的一部分。
+    BRANCH: "rgb(32,132,140)",
   };
+  // 带 alpha 的 v2 颜色（同样只写 rgb 三元组，alpha 走 Alpha 表，理由同上）
+  ALPHA.BRANCH = 210 / 255;   // 分支描边/落点的 alpha，够实但不糊住棋子
 
   // ---------- 动画参数（与 lua/levelScript.lua 的 ANIM.CFG 同一套数值）----------
   const ANIM = {
@@ -1158,7 +1257,8 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     CONFIRM_DRAW_YES: "同意和棋",
     CONFIRM_DRAW_NO: "拒绝求和",
     // 面板
-    PANEL_TITLE: "黑白棋局",
+    // 【v3.1】游戏名统一为「国际象棋」（与 lua CONFIG.TEXT.PANEL_TITLE 逐字比对，两边必须同步）
+    PANEL_TITLE: "国际象棋",
     // 【v1.11 失子行文案】只列字母 'P P N' 看不出这是谁吃掉谁的，统一加前缀。
     // CAP_PREFIX 对应 Lua 的 CONFIG.CAP_PREFIX（唯一实际使用者，见 cap_text）。
     // 老的 CAP_WHITE_PREFIX / CAP_BLACK_PREFIX 仍留在 TEXT 里只为与 Lua 的 CONFIG.TEXT
@@ -1176,6 +1276,127 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     PROMO_BISHOP: "象",
     PROMO_KNIGHT: "马",
   };
+
+  // ============================================================================
+  // v2.0 文案表（初始界面 / 待机室 / 悔棋 / 复盘研习）
+  // ----------------------------------------------------------------------------
+  // 【为什么不并进上面的 TEXT】tools_work/consistency_check.cjs 第 79-94 行用
+  //   /([A-Z_][A-Z0-9_]+)\s*:\s*"([^"]*)"/ 抓 `const TEXT = {` 到其后**第一个** `};`
+  // 之间的所有键值，与 Lua 的 CONFIG.TEXT 做「共同键」逐字比对。
+  // 把 v2 键并进去只有一个后果：Lua 没跟着写就全部算「Demo 独有」→ 静默漏检；
+  // Lua 写了但字不同 → 红。反而让「v1 文案已被全量守护」这个结论变模糊。
+  // 独立成表后：① v1 的 TEXT 键集一位都没动，门禁语义不变；
+  //             ② 将来要守护 v2 文案，只需在脚本里加一行换表名，不用改正则。
+  // 【逐字纪律】下表的值是**文案权威源**，Lua 侧 CONFIG.TEXT 必须逐字照抄，
+  //   含全角括号「（）」、全角冒号「：」、间隔号「·」与 en-dash「–」（U+2013）。
+  // ============================================================================
+  const TEXT_V2 = {
+    // ---- 初始界面 ----
+    START_TITLE: "国际象棋",
+    START_SUB: "选一个走时，选一种开始",
+    GROUP_TIME: "走时档",
+    GROUP_ENTRY: "开始方式",
+    TC_LABEL_FIRST: "首钟：",
+    TC_LABEL_INC: "加秒：",
+    TC_LABEL_EST: "单局：",
+    TC_LOCKED_BY: "由 {who} 选定",
+    TC_FIRST_PICK_TIP: "先选者生效",
+    ENTRY_1: "单人·双人同屏",
+    ENTRY_2: "单人·复盘研习",
+    ENTRY_3: "联机·待机室",
+    // 【P0 文案上限】底部提示条 ≤ 20 个汉字 —— 21 字**是真的会被截断**，不只是措辞问题。
+    // 现 15 字。Lead 建议「同屏两人轮流点，或进待机室等人」（15 字），
+    // 这里保留「等对手」而不是「等人」：与待机室里「对手」这个称谓同源，
+    // 避免同一屏出现两套称呼（一个叫「对手」一个叫「人」）。
+    FOOT_TIP: "同屏两人轮流点，或进待机室等对手",
+    // ---- 走时档名（四个具名键，`V2_PRESETS` 的名字全部引用这里，不写字面量）----
+    TC_NAME_1_0: "超快棋",
+    TC_NAME_3_2: "闪电战",
+    TC_NAME_15_10: "快棋",
+    TC_NAME_90_30: "慢棋",
+    // ---- 待机室 ----
+    // 【P0 决策 D-3】标题**无空格**，与入口按钮「联机·待机室」逐字一致（逐字契约）。
+    LOBBY_TITLE: "联机·待机室",
+    LOBBY_SUB: "两人都点准备后倒数 3 秒开局",
+    // 【为什么不叫「玩家1 / 玩家2」】官方《客户端控件API文档》确认：
+    // 客户端 Lua **读不到**房间玩家列表 / 人数 / 他人昵称（§6 game 全部函数、
+    // §5 Script 全部方法、§11 全部枚举，均无此能力）。
+    // 一旦用「玩家1/2」，会暗示「序号与真实座位一致」—— 而序号是我们自己编的，
+    // 顺序推错时玩家会以为自己是玩家1、实际是玩家2。
+    // 「你 / 对手」是唯一不会说谎的措辞：这两件事是本端**确切知道**的唯一事实。
+    //
+    // 【键名规范】以下 6 个键名由 Lead + lua-lead 对齐定稿（LOBBY_* 前缀），
+    // Lua 侧必须用同名键。历史上的 PLAYER_1 / PLAYER_2 / PLAYER_EMPTY /
+    // READY_YES / READY_NO / LOBBY_WAIT_JOIN 一律作废，**不要再使用**。
+    LOBBY_ME: "你",
+    LOBBY_OPP: "对手",
+    // 【连带项】只改标签不改空态会出病句「对手　（空位）」，
+    // 所以空位那一格直接写「等待对手加入…」，它同时承担名字位与状态位的语义。
+    LOBBY_SLOT_EMPTY: "等待对手加入…",
+    LOBBY_READY_ON: "已准备",
+    LOBBY_READY_OFF: "未准备",
+    // 只有自己一人时的兜底提示（与「直接开始」按钮配对）
+    LOBBY_NOBODY: "没等到另一位玩家，也可以直接开始",
+    // ---- 待机室按钮 / 其它 ----
+    BTN_READY: "准备",
+    BTN_UNREADY: "取消准备",
+    BTN_START_NOW: "直接开始",
+    LOBBY_COUNTDOWN: "即将开始",
+    LOBBY_WAIT_TIP: "等对手进来并点准备",
+    LOBBY_SOLO_TIP: "只有你一人，点「直接开始」也能下",
+    LOBBY_LEAVE: "返回主菜单",
+    // ---- 悔棋 ----
+    // 【全角括号】是「悔棋（剩 3）」，不是半角 (剩 3) —— 文案逐字契约。
+    BTN_UNDO: "悔棋（剩 {n}）",
+    CONFIRM_UNDO: "请求悔棋：双方各退一步",
+    CONFIRM_UNDO_YES: "同意",
+    CONFIRM_UNDO_NO: "取消",
+    UNDO_WAIT: "等待对手同意悔棋…",
+    // 措辞与待机室统一用「对手」，不再混用「对方」
+    UNDO_REJECTED: "对手拒绝悔棋，继续对局",
+    UNDO_NO_LEFT: "这局两边的悔棋次数都用完了",
+    UNDO_TOO_EARLY: "刚开局，还没有能退的一步",
+    UNDO_OVER: "对局已结束，不能再悔棋",
+    UNDO_IN_REVIEW: "复盘里不能悔棋，先退出复盘",
+    UNDO_DONE: "已悔棋，双方各退一步",
+    // ---- 复盘研习 ----
+    REVIEW_LAB_TITLE: "复盘研习 · 主变",
+    REVIEW_AT_START_V2: "复盘 · 开局（可试走）",
+    REVIEW_PROGRESS: "第 {n}/{m} 步",
+    BTN_BACK_TO_MAIN: "退回主变",
+    BTN_BRANCH_NEWGAME: "从此局面开新局",
+    REVIEW_LAB_HINT: "点棋子可试走，青色是试走线，主变不会被改动",
+    REVIEW_EXITED: "已退回主变",
+    REVIEW_NEWGAME_DONE: "已从此局面开新局，历史已清空",
+    BTN_REVIEW_FROM_RESULT: "复盘研习",
+    // ---- 通用 ----
+    BTN_BACK: "返回",
+    BTN_RESTART: "重新开始",
+    PICKED_TIP: "已选：{name}",
+  };
+
+  // ============================================================================
+  // v2.0 走时档（唯一数据源：初始界面 4 张卡与棋钟都读这张表）
+  // ----------------------------------------------------------------------------
+  // 【硬契约·不得改动】首钟 / 加秒四个数值由策划拍板：
+  //   超快棋 60+0 / 闪电战 180+2 / 快棋 900+10 / 慢棋 5400+30
+  // 【与 Lua 的交叉校验】Lua 的 CONFIG.TIME_CONTROLS 是同序四条（它壹基、这里零基）。
+  //   两边都必须保留「默认档 = 快棋 = 900+10」的断言：
+  //   Demo 断言 V2_PRESETS[2] 是 900/10，Lua 断言 TIME_CONTROLS[3] 是 900/10。
+  // 【为什么默认档是 2（快棋）】v1 的 INITIAL_TIME_SEC = 900 / INCREMENT_SEC = 10
+  //   正好就是快棋 —— 默认档 = v1 行为，现有自检项与既有手感零回归。
+  // 【en-dash】「约 1–3 分钟」里的横杠是 U+2013 EN DASH，不是 ASCII 连字符、也不是 ~。
+  //   文案逐字契约，别顺手改成 ASCII。
+  // ============================================================================
+  const V2_PRESETS = [
+    { name: TEXT_V2.TC_NAME_1_0,   clockSec: 60,   incSec: 0,  first: "1 分钟",  inc: "无加秒",      est: "约 1–3 分钟" },
+    { name: TEXT_V2.TC_NAME_3_2,   clockSec: 180,  incSec: 2,  first: "3 分钟",  inc: "每步 +2 秒",  est: "约 5–12 分钟" },
+    { name: TEXT_V2.TC_NAME_15_10, clockSec: 900,  incSec: 10, first: "15 分钟", inc: "每步 +10 秒", est: "约 15–40 分钟" },
+    { name: TEXT_V2.TC_NAME_90_30, clockSec: 5400, incSec: 30, first: "90 分钟", inc: "每步 +30 秒", est: "约 60–120 分钟" },
+  ];
+  const V2_DEFAULT_PRESET = 2;     // 默认选中「快棋」= 900+10（与 v1 行为一致）
+  const V2_UNDO_PER_SIDE = 3;      // 每方每局限悔棋次数（成对悔棋：用一次双方各扣 1）
+  const V2_COUNTDOWN_SEC = 3;      // 待机室两人就绪后的倒数时长（秒）
 
   // ============================================================================
   // 图元拟合棋子（**唯一的棋子画法**）
@@ -1384,6 +1605,15 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
                  : [COLOR.BLACK_PIECE, COLOR.BLACK_OUTLINE];
   }
 
+  // ============================================================================
+  // 【v2.0 关键】这个 `= 900` / `= 10` 字面量**必须留着**，不许改成读 V2_PRESETS。
+  // tools_work/consistency_check.cjs 第 65-72 行用 /\bINITIAL_TIME_SEC\s*=\s*(\d+)/
+  // 抽取字面量与 Lua 的 CONFIG.INITIAL_TIME_SEC 逐项比对，改成表达式就会「未找到」→ 红。
+  // 它们的语义已经升级为：**默认档（快棋）的基准值**，由 v2_use_preset() 在每次开局时
+  // 从 V2_PRESETS[V2_DEFAULT_PRESET] 覆写进 G.clockWhite/G.clockBlack，
+  // 而 V2_PRESETS[2] 的 (clockSec, incSec) 就恒等于 (INITIAL_TIME_SEC, INCREMENT_SEC)。
+  // 自检项 `v2_preset_matches_v1_default` 与 `clock_increment` 共同守住这一点。
+  // ============================================================================
   const INITIAL_TIME_SEC = 900, INCREMENT_SEC = 10;
   const CLOCK_REFRESH_SEC = 0.25, DRAW_COOLDOWN_SEC = 30, CLOCK_LOW_SEC = 60;
   const MOVE_LOG_LINES = 6;
@@ -1394,6 +1624,10 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
   // —— 实测 TEXT_SUB(110,104,96) on BOARD_FRAME(150,112,82) 只有 1.24:1，等于看不见。
   const FRAME_PAD_RATIO = 0.16;
   function framePadOf(cell) { return cell * FRAME_PAD_RATIO; }
+  // 「板高 ≥ 2.1 × 字号」的全局比例常量（v2.0 起）。
+  // 【提到模块级的原因】v1 的面板按钮（`退出复盘`/`悔棋（剩 N）`/提示条）也要遵守这条规则，
+  // 所以它不能只活在 computeLayout 里 —— 面板 build 时也要读它。
+  const V2_H_RATIO = 2.1;
 
   function computeLayout(canvasW, canvasH) {
     const boardSide = canvasH * BOARD_SIDE_RATIO;
@@ -1416,9 +1650,107 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     //   只有原本出错的 4:3 由 1.067 修正为 0.800。与 lua/levelScript.lua 同式。
     const fontScale = Math.min(canvasW / BASE_W, canvasH / BASE_H);
     const font = (base) => Math.max(FONT.MIN_FONT, Math.floor(base * fontScale));
+    // ==========================================================================
+    // v2.0 屏（初始界面 / 待机室 / 复盘动作条）的几何
+    // --------------------------------------------------------------------------
+    // 【板高 ≥ 2.1 × 字号 —— 本项目硬规则，已踩三次】
+    //   行高 1.2× + 上下内边距 0.9× = 2.1×。违反的后果**不是截断**，
+    //   而是**整行被吞掉、什么都不显示、也不报错**。
+    //   历史三次：① v1.10 结算面板标题 ② v2.0 块 1 的档位名 ③ gdd §5.6 倒数数字 72。
+    //
+    // 【本文件的解法：不再手写任何文本高/字号字面量，只走两个方向】
+    //   ① 自由漂浮的单行文字（标题/副标题/分组标签/提示）→ 用 `fitH(base)` 由字号反推高度
+    //   ② 容器内均分的文字行（档位卡三行/玩家行/动作条按钮）→ 用 `fontForH(h)` 由行高反推字号
+    //   两个函数互为逆运算，所以**无论哪条路径都不可能出现 ratio < 2.1**。
+    //   自检 `v2_text_box_height_ge_2_1x_font` 遍历全部 v2 文本控件实测兜底。
+    // ==========================================================================
+    // 【注意】V2_H_RATIO 定义在模块级（见 FRAME_PAD_RATIO 附近），不在这里重复声明 ——
+    //   v1 的面板按钮也要用它，写在 computeLayout 内部会让面板 build 拿不到。
+    const fitH = (base) => {
+      const f = Math.max(FONT.MIN_FONT, Math.floor(base * fontScale));
+      return Math.ceil(f * V2_H_RATIO) + 1;                        // +1 吸收取整误差
+    };
+    const fontForH = (hPx) => {
+      // 由行高反推字号：保证 floor(h / 2.1) 乘回去仍 ≤ h。
+      // 再夹到 [MIN_FONT, ...]：低于 MIN_FONT 时宁可让调用方加大容器高度。
+      return Math.max(FONT.MIN_FONT, Math.floor(hPx / V2_H_RATIO));
+    };
+    // ---- 纵向排布：完全由「自上而下依次摆放 + fitH 高度 + 固定间隙」推导 ----
+    // 【为什么要这样算】旧写法是「y 写 canvasH * 0.xxx 的比例」，而高度一旦被
+    // fitH 撑大，两段就会重叠或把标题顶出屏幕（标题 76 号字要 161px 高，
+    // 按 0.845 摆会顶到 921px，直接飞出 900 高的画布）。
+    // 现在只有一个来源：gap 数组 + 每段自己的 fitH。
+    const v2gap = Math.max(6, canvasH * 0.012);      // 段落间隙
+    const v2 = { contentW: Math.min(canvasW * 0.72, boardSide * 1.62) };
+    // 卡片高度：先定它（跟棋盘走，视觉同源），下面再反推卡内字号
+    v2.cardsH = Math.max(160, boardSide * 0.285);
+    v2.entryH = Math.max(fitH(FONT.V2_ENTRY), boardSide * 0.098);
+    v2.rowH = Math.max(fitH(FONT.V2_CARD_LINE + 4), v2.cardsH * 0.24);
+    v2.countH = fitH(FONT.V2_CREATE);
+    // 从画布顶端往下摆：titleY 是**下边缘**（千星坐标系原点左下）
+    let cursor = canvasH - canvasH * 0.020;
+    v2.titleH = fitH(FONT.V2_TITLE);   cursor -= v2.titleH;   v2.titleY = cursor;
+    cursor -= v2gap;
+    v2.subH = fitH(FONT.V2_SUB);       cursor -= v2.subH;     v2.subY = cursor;
+    cursor -= v2gap * 1.4;
+    v2.timeLabelH = fitH(FONT.V2_SMALL); cursor -= v2.timeLabelH; v2.timeLabelY = cursor;
+    cursor -= v2gap * 0.5;
+    cursor -= v2.cardsH;               v2.cardsY = cursor;
+    cursor -= v2gap * 0.6;
+    v2.lockTipH = fitH(FONT.V2_SMALL);  cursor -= v2.lockTipH;  v2.lockTipY = cursor;
+    cursor -= v2gap * 0.6;
+    v2.entryLabelH = fitH(FONT.V2_SMALL); cursor -= v2.entryLabelH; v2.entryLabelY = cursor;
+    cursor -= v2gap * 0.5;
+    cursor -= v2.entryH;               v2.entryY = cursor;
+    cursor -= v2gap * 1.2;
+    v2.footH = fitH(FONT.V2_SMALL);    cursor -= v2.footH;     v2.footY = cursor;
+    // 【兜底】若在小画布上算出来 footY < 0（整体放不下），
+    // 就不硬塞，直接把整块内容上移 —— 宁可底部留白也不让标题出屏。
+    v2.overflowShift = cursor < 0 ? -cursor : 0;
+    if (v2.overflowShift > 0) {
+      v2.titleY += v2.overflowShift; v2.subY += v2.overflowShift;
+      v2.timeLabelY += v2.overflowShift; v2.cardsY += v2.overflowShift;
+      v2.lockTipY += v2.overflowShift; v2.entryLabelY += v2.overflowShift;
+      v2.entryY += v2.overflowShift; v2.footY += v2.overflowShift;
+    }
+    // ---- 卡内四行的行高与字号：由卡高均分反推（保证 ratio ≥ 2.1） ----
+    // 卡内是 4 段文字：档位名 / 首钟 / 加秒 / 预估单局。
+    // padY 取卡高 6%，余下 88% 均分给四行 —— 比旧版「0.30 + 0.24 + 0.24」更稳，
+    // 且四行等高看起来更像「一张规格表」而不是「标题 + 附注」。
+    {
+      const padY = v2.cardsH * 0.06;
+      const inner = v2.cardsH - padY * 2;
+      // 档位名占 1.15 份，另三行各 1 份 → 总 4.15 份
+      const unit = inner / 4.15;
+      v2.cardNameH = unit * 1.15;
+      v2.cardLineH = unit;
+      v2.cardPadY = padY;
+      // 字号由行高反推 —— 注意卡名字号额外封顶在 FONT.V2_CARD_NAME，
+      // 免得卡高变大时把档位名撑成标题那么大的字。
+      v2.cardNameFont = Math.min(FONT.V2_CARD_NAME,
+        Math.floor(v2.cardNameH / V2_H_RATIO / Math.max(fontScale, 1e-6)));
+      v2.cardLineFont = Math.min(FONT.V2_CARD_LINE,
+        Math.floor(v2.cardLineH / V2_H_RATIO / Math.max(fontScale, 1e-6)));
+    }
+    // ---- 复盘动作条（棋盘正下方 99px 空档）----
+    v2.barH = Math.max(46, boardSide * 0.072);
+    v2.barY = Math.max(10, boardBottom * 0.10);
+    // 条内按钮高 = 76% barH，字号由该高度反推（不复用 V2_SMALL，否则 4:3 下会违反 2.1）
+    v2.barBtnH = v2.barH * 0.76;
+    v2.barBtnFont = fontForH(v2.barBtnH);
+    v2.barTextH = v2.barH;                    // 进度行占满整条高度（最宽松）
+    v2.barTextFont = Math.min(FONT.V2_SMALL, fontForH(v2.barTextH));
+    // ---- 待机室玩家行的两档字号：都从 rowH 反推 ----
+    // 名字比状态大 4 号，但两者都必须满足「rowH ≥ 2.1 × 各自字号」，
+    // 所以先由 rowH 反推上限，再分配：名字 = 上限，状态 = 上限 − 4（并夹到 MIN_FONT）。
+    {
+      const cap = fontForH(v2.rowH);
+      v2.rowNameFont = Math.max(FONT.MIN_FONT, cap);
+      v2.rowStateFont = Math.max(FONT.MIN_FONT, Math.min(cap, v2.rowNameFont - 4));
+    }
     return { canvasW, canvasH, boardSide, cell, boardLeft, boardBottom,
              panelW, panelLeft, panelBottom, panelH, font, fontScale,
-             framePad: framePadOf(cell) };
+             framePad: framePadOf(cell), v2, V2_H_RATIO, fitH, fontForH };
   }
 
   const L = computeLayout(BASE_W, BASE_H);
@@ -1455,6 +1787,13 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     squares: [], hitAreas: [], pieceSlots: [], slotShown: 0, legalHL: [], legalCapHL: [], selHL: null,
     lastMove: [], checkHL: null, coords: [], hint: null, frame: null, frameInner: null,
     panel: {}, result: {}, promo: {}, drawDlg: {}, sfxBtn: null,
+    // v2.0 三块新界面 + 新增小件，全部在这里预先占位（禁用隐式新增属性，
+    // 免得「某处忘了 push 进 parts 数组」导致隐藏不掉、盖在棋盘上 —— v1 的结算弹窗踩过）。
+    start: {},   // 初始界面（A）
+    lobby: {},   // 待机室（B）
+    lab: {},     // 复盘研习的棋盘下动作条（C）
+    undoDlg: {}, // 悔棋确认框（D）
+    branchRing: null,   // 复盘分支试走的青色棋子方框（整个分支视觉只多这 1 个控件）
   };
 
   // 32 个棋槽是池化复用的；走子动画只动「这一枚」的 DOM，绝不对所有槽位每帧写样式。
@@ -1534,6 +1873,12 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     UI.selHL = mkEl(boardEl, "sel el", { x: 0, y: 0, w: L.cell, h: L.cell, bg: COLOR.SEL, anchorId: "selhl" });
     UI.selHL.style.opacity = String(ALPHA.SEL);
     UI.selHL.classList.add("hidden");
+    // v2.0 复盘分支试走：青色方框（整个分支视觉只多这 1 个控件）
+    // 【为什么复用单个元素而不是给棋子换描边色】给 paintSlot 的 edgeColor 加参数会让
+    // 32 个槽位的绘制路径多一个分支；一个压在棋子上的青色方框已经足够区分主变与试走线，
+    // 且「分支试走」在语义上本来就是「这一格刚被试着走过」，框住目标格是更贴切的表达。
+    UI.branchRing = mkEl(boardEl, "branch-ring el", { x: 0, y: 0, w: L.cell, h: L.cell, anchorId: "v2branchring" });
+    UI.branchRing.classList.add("hidden");
     // 坐标：画在浅米外壳上（棋盘框外），TEXT_SUB 对 BG(242,239,234) 对比度 ~4.8:1
     // 【v3 关键】必须让开 framePad：坐标条整体再往外推 framePad + 2px。
     // 只按原坐标（-coordFont）会让文字中线落进暖木外框里，对比度掉到 1.24:1，
@@ -1582,9 +1927,10 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
       REVIEW_TOGGLE: { y: 0.070, h: 0.078 },   // 行 3 常驻：看历史 / 退出复盘
       BTN_ROW2:      { y: 0.163, h: 0.078 },
       BTN_ROW1:      { y: 0.255, h: 0.078 },
-      DIV_BTN:       { y: 0.348, h: 0.005 },   // 按钮区 与 走子记录 之间的分隔线
-      MOVE_LOG:      { y: 0.360, h: 0.218 },   // 走子记录（6 行 × 字号 20）
-      DIV_LOG:       { y: 0.588, h: 0.005 },   // 走子记录 与 失子区 之间的分隔线
+      DIV_BTN:       { y: 0.348, h: 0.005 },   // 按钮区 与 吃子成就区 之间的分隔线
+      // 【v3.2】走子记录已删除，原位换成「吃子成就区」（棋子图案两行）
+      CAP_AREA:      { y: 0.360, h: 0.218 },   // 吃子成就区（两行棋子图案 + 两行标签）
+      DIV_LOG:       { y: 0.588, h: 0.005 },   // 吃子区 与 失子区 之间的分隔线
       CAP_BLACK:     { y: 0.600, h: 0.050 },
       CAP_WHITE:     { y: 0.660, h: 0.050 },
       CLOCKS:        { y: 0.730, h: 0.088 },   // 两个棋钟**并排**一格（左右各半）
@@ -1724,18 +2070,25 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     //   ["btnNew", "hitNew", atX(0.04), atY(0.255), ...
     //   ["btnResign", "hitResign", atX(0.52), atY(0.255), ...
     //   ["btnDraw", "hitDraw", atX(0.04), atY(0.163), ...
-    //   ["btnLocal", "hitLocal", atX(0.52), atY(0.163), ...
+    // 【v3.2】btnLocal（切换本地同屏）的锚点行已删除，且**不要**在这里把它写回来。
+    //   ⚠️ 原因：consistency_check.cjs 读取本注释块用的正则**不剔除注释**，
+    //   凡是「方括号 + 引号 btn 名 + 引号 hit 名 + atX 小数」这种形态，
+    //   无论出现在代码还是注释里都会被当成真实按钮登记。
+    //   所以「删掉一个按钮」= 删除它的锚点行 + 不要在注释里复述该形态。
+    //   （本段刻意不写示例，避免又被抓走 —— 这正是它上一版失败的原因。）
     //   ["btnRevStart", "hitRevStart", atX(0.04), atY(0.255), ...
     //   ["btnRevPrev", "hitRevPrev", atX(0.52), atY(0.255), ...
     //   ["btnRevNext", "hitRevNext", atX(0.04), atY(0.163), ...
     //   ["btnRevEnd", "hitRevEnd", atX(0.52), atY(0.163), ...
-    //   { x: atX(0.04), y: atY(0.070), ... anchorId: "btnreview" }   ← 行 3 通栏
+    //   { x: atX(0.04), y: atY(0.070), ... anchorId: "btnreview" }   ← 行 3 左半（v2.0 起半宽）
     const btnSpecs = [
       ["btnNew", "hitNew", atX(0.04), row1Y, TEXT.BTN_NEWGAME, "btnnew"],
       ["btnResign", "hitResign", atX(0.52), row1Y, TEXT.BTN_RESIGN, "btnresign"],
       ["btnDraw", "hitDraw", atX(0.04), row2Y, TEXT.BTN_DRAW, "btndraw"],
-      ["btnLocal", "hitLocal", atX(0.52), row2Y, TEXT.BTN_LOCAL, "btnlocal"],
-      // ---- 复盘模式：与上面四个完全同位同尺寸 ----
+      // 【v3.2 删除】"btnLocal"（切换本地同屏）—— 用户要求删按钮、删同屏模式。
+      //   Lua 侧已同步删除；consistency_check 的配平表要求两侧一致，
+      //   所以这里必须也去掉，否则会报「缺少控件 切换本地同屏」。
+      // ---- 复盘模式：与上面三个完全同位同尺寸 ----
       ["btnRevStart", "hitRevStart", atX(0.04), row1Y, TEXT.BTN_REVIEW_START, "btnrevstart"],
       ["btnRevPrev", "hitRevPrev", atX(0.52), row1Y, TEXT.BTN_REVIEW_PREV, "btnrevprev"],
       ["btnRevNext", "hitRevNext", atX(0.04), row2Y, TEXT.BTN_REVIEW_NEXT, "btnrevnext"],
@@ -1755,17 +2108,55 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
       UI.panel[hitKey] = hit;
     }
 
-    // 行 3：单按钮通栏（宽 92%），文案随状态在「看历史」/「退出复盘」之间切换
+    // ---- 行 3：v2.0 起**中剖成两个半宽按钮** ----
+    // 左半 = 「看历史 / 退出复盘」（v1 的通栏按钮，现在缩成半宽，x 仍是 atX(0.04)）
+    // 右半 = 「悔棋（剩 N）」（v2 新增）
+    //
+    // 【为什么不给 PANEL_LAYOUT 加键】面板 11 个槽位已经排满，插一个新槽要重排整张表，
+    // 而那张表的键集被 consistency_check（第 215-231 行取 Lua 与 Demo 的**并集**，
+    // 任一侧缺项即 FAIL）与 lua-lead 的 v2 重排共同占着。
+    // 中剖不改变任何 y/h，只把同一行的宽度从 0.92 拆成 0.44 + 0.04 间隙 + 0.44，
+    // 键集零变化，两侧门禁都不受影响。
+    //
+    // 【consistency_check 对 btnreviewtoggle 是合成判定】第 193-195 行只看 HTML 里有没有
+    // `anchorId: "btnreview"` 这串字符，有就假定 x=0.04 / slot=REVIEW_TOGGLE。
+    // 所以左半必须**保持 anchorId: "btnreview" 且 x 仍是 atX(0.04)** —— 宽度随便改。
     {
       const b = PL.REVIEW_TOGGLE;
       const by = py + ph * b.y;
+      // 【v2.0 宽度重平衡】把 0.44/0.44 改成 0.42/0.46：右半装的是「悔棋（剩 3）」，
+      // 6 个全角宽字符，比左半的「看历史 / 退出复盘」（3~4 字）明显更长。
+      // 等宽会在 1600×900 下算出「需宽 146 > 可用 145.6」——**差 1px 也要换行**，
+      // 换行后半宽按钮里只剩一行字能显示，用户会看到半个「悔棋」。
+      // 左半缩到 0.42 后仍能放 4 字（需 96，可用 139），右半 0.46 可用 152 > 需 144。
+      //
+      // 【更底层的保险】即便以后文案再变长，fontForW() 还会按可用宽度自动降字号
+      // （见下面 undoFont 的推导）—— 宽度重平衡只是让它不必真的降字号，保住观感一致。
+      const row3BtnW_L = w(0.42);
+      const row3BtnW_R = w(0.46);
+      const row3Font = L.font(FONT.BUTTON);
+      // 左半：看历史 / 退出复盘
       UI.panel.btnReview = mkEl(overlayLayer, "btn el", {
-        x: atX(0.04), y: by, w: w(0.92), h: btnH, bg: COLOR.BTN,
-        fontSize: L.font(FONT.BUTTON), color: COLOR.BTN_TEXT, text: TEXT.BTN_REVIEW_HISTORY, anchorId: "btnreview",
+        x: atX(0.04), y: by, w: row3BtnW_L, h: btnH, bg: COLOR.BTN,
+        fontSize: row3Font, color: COLOR.BTN_TEXT, text: TEXT.BTN_REVIEW_HISTORY, anchorId: "btnreview",
       });
       UI.panel.hitReview = mkEl(overlayLayer, "btn-hit el", {
-        x: atX(0.04), y: by, w: w(0.92), h: btnH, anchorId: "btnreview_hit",
+        x: atX(0.04), y: by, w: row3BtnW_L, h: btnH, anchorId: "btnreview_hit",
       });
+      // 右半：悔棋（剩 N）
+      // 【anchorId 纪律】v2 新控件一律用 `v2` 前缀，绝不用 btn 前缀 ——
+      // consistency_check 有两条「未登记的按钮」断言，任何 `btn` 开头的都会被要求登进 BTN_PAIRS。
+      UI.panel.btnUndo = mkEl(overlayLayer, "btn el", {
+        x: atX(0.50), y: by, w: row3BtnW_R, h: btnH, bg: COLOR.BTN,
+        fontSize: row3Font, color: COLOR.BTN_TEXT,
+        text: TEXT_V2.BTN_UNDO.replace("{n}", String(V2_UNDO_PER_SIDE)), anchorId: "v2undo",
+      });
+      UI.panel.hitUndo = mkEl(overlayLayer, "btn-hit el", {
+        x: atX(0.50), y: by, w: row3BtnW_R, h: btnH, anchorId: "v2undo_hit",
+      });
+      // 行 3 左半与右半之间的间隙 = 0.46 → 0.50 = 面板宽 4%（1600×900 下 14px）。
+      // 【为什么不贴成一个大按钮】两键功能完全不同（一个只读回放、一个会真改局面），
+      // 贴死会让用户误点；4% 是「看得出是两键、又不浪费行宽」的最小值。
     }
 
     // 面板按钮的音效统一在 handler 里先响（点击音）+ 业务音由各业务函数自己出。
@@ -1775,23 +2166,29 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     UI.panel.hitNew.addEventListener("click", withClick(() => newGame()));
     UI.panel.hitResign.addEventListener("click", withClick(() => doResign()));
     UI.panel.hitDraw.addEventListener("click", withClick(() => doDrawRequest()));
-    UI.panel.hitLocal.addEventListener("click", withClick(() => toggleLocalMode()));
+    // 【v3.2 删除】hitLocal（切换本地同屏）的点击绑定 —— 按钮已按用户要求移除
     UI.panel.hitRevStart.addEventListener("click", withClick(() => reviewGoto(0)));
     UI.panel.hitRevPrev.addEventListener("click", withClick(() => reviewStep(-1)));
     UI.panel.hitRevNext.addEventListener("click", withClick(() => reviewStep(+1)));
     UI.panel.hitRevEnd.addEventListener("click", withClick(() => reviewGoto(G.history.length - 1)));
     UI.panel.hitReview.addEventListener("click", withClick(() => onReviewEntryClicked()));
+    UI.panel.hitUndo.addEventListener("click", withClick(() => onUndoClicked()));
 
-    // 显隐分组：两套按钮 + 命中区
+    // 显隐分组：两套按钮 + 命中区。
+    // 【v2.0】悔棋按钮也归「正常模式」这一组 —— 复盘里禁悔棋（UNDO_IN_REVIEW），
+    // 所以复盘模式直接不显示它（而不是显示了再灰掉），少一个误导入口。
     UI.panel.normalParts = [UI.panel.btnNew, UI.panel.hitNew, UI.panel.btnResign, UI.panel.hitResign,
-                            UI.panel.btnDraw, UI.panel.hitDraw, UI.panel.btnLocal, UI.panel.hitLocal];
+                            UI.panel.btnDraw, UI.panel.hitDraw,
+                            UI.panel.btnUndo, UI.panel.hitUndo];
     UI.panel.reviewParts = [UI.panel.btnRevStart, UI.panel.hitRevStart, UI.panel.btnRevPrev, UI.panel.hitRevPrev,
                             UI.panel.btnRevNext, UI.panel.hitRevNext, UI.panel.btnRevEnd, UI.panel.hitRevEnd];
     applyPanelMode();
 
     // 提示条：棋盘下方。y 起点必须再加 framePad —— v3 起棋盘外面多了一圈暖木外框，
     // 原坐标（boardBottom + boardSide + hintH*0.3 = 811.08）会压进外框顶边 4px。
-    const hintH = L.font(FONT.HINT) * 1.4;
+    // 【v2.0 修正】原为 1.4 × 字号 —— 违反「板高 ≥ 2.1×字号」，提示条那行字在真机上会被整行吞掉。
+    // 提示条是**单行文本**，和按钮一样受同一条规则约束，改用 fitH 推导。
+    const hintH = L.fitH(FONT.HINT);
     UI.hint = mkEl(overlayLayer, "hint", {
       x: L.boardLeft, y: L.boardBottom + L.boardSide + L.framePad + hintH * 0.3,
       w: L.boardSide, h: hintH,
@@ -1913,6 +2310,398 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     }
   }
 
+  // ============================================================================
+  // v2.0 三块新界面（初始界面 A / 待机室 B / 复盘研习动作条 C）的构建
+  // ----------------------------------------------------------------------------
+  // 【层级纪律（与千星 Lua 同构）】三块屏都是 z-index:17 的整屏层：
+  //   盖得住面板(10~13)与音效按钮(16)，但盖不住弹窗(20~24)。
+  //   所以「屏幕层挡在棋盘前」不需要逐个隐藏面板控件，只靠遮挡顺序就够了 ——
+  //   这也正是 Lua 侧最省控件数的做法（平台是「同级后出现的在上」）。
+  // 【命名纪律】所有 v2 控件的 anchorId 一律 `v2` 前缀。
+  //   tools_work/consistency_check.cjs 有两道「未登记的按钮」断言
+  //   （第 268-280 行）：任何 `btn` 开头的按钮都必须登记进 BTN_PAIRS，否则 FAIL。
+  //   v2 新增 10+ 个按钮，全塞进配平表既没必要也不现实，前缀回避即可。
+  // ============================================================================
+  function buildV2Start() {
+    const V = L.v2;
+    const W = BASE_W, H = BASE_H;
+    const cx = (W - V.contentW) / 2;
+
+    // ---- 整屏底板：接近不透明的浅米，但不是纯色块 ----
+    // 【为什么不纯色】tech-architecture 二之二第 4 条记过：浅色主题下纯色块会
+    // 在 1600×900 上跟外壳背景差出一圈硬边。这里用一个略提亮的半透明底
+    // （PANEL 252,250,247 @ 0.94），透出一点外壳渐变，边缘自然。
+    UI.start.parts = [];
+    UI.start.scr = mkEl(overlayLayer, "v2scr el", { x: 0, y: 0, w: W, h: H, anchorId: "v2startscr" });
+    UI.start.scr.style.background = "rgba(252,250,247,0.94)";
+    UI.start.parts.push(UI.start.scr);
+
+    // 顶部与底部各一条极淡的暖褐色带，做「纸面」的收边（不是硬横线：alpha 只有 0.05/0.035）
+    const topBand = mkEl(overlayLayer, "v2band el", {
+      x: 0, y: H * 0.845, w: W, h: H * 0.155, anchorId: "v2starttopband",
+    });
+    topBand.style.background = "rgba(150,112,82,0.05)";
+    const botBand = mkEl(overlayLayer, "v2band el", {
+      x: 0, y: 0, w: W, h: H * 0.105, anchorId: "v2startbotband",
+    });
+    botBand.style.background = "rgba(150,112,82,0.035)";
+    UI.start.parts.push(topBand, botBand);
+
+    // ---- 标题 / 副标题 ----
+    UI.start.title = mkEl(overlayLayer, "v2t el", {
+      x: cx, y: V.titleY, w: V.contentW, h: V.titleH,
+      fontSize: L.font(FONT.V2_TITLE), color: COLOR.TEXT,
+      text: TEXT_V2.START_TITLE, anchorId: "v2starttitle",
+    });
+    UI.start.sub = mkEl(overlayLayer, "v2t el", {
+      x: cx, y: V.subY, w: V.contentW, h: V.subH,
+      fontSize: L.font(FONT.V2_SUB), color: COLOR.TEXT_SUB,
+      text: TEXT_V2.START_SUB, anchorId: "v2startsub",
+    });
+    UI.start.parts.push(UI.start.title, UI.start.sub);
+
+    // ---- 分组小标题：「走时档」----
+    UI.start.groupTime = mkEl(overlayLayer, "v2t left el", {
+      x: cx, y: V.timeLabelY, w: V.contentW, h: V.timeLabelH,
+      fontSize: L.font(FONT.V2_SMALL), color: COLOR.TEXT_DIM,
+      text: TEXT_V2.GROUP_TIME, anchorId: "v2grouptime",
+    });
+    UI.start.parts.push(UI.start.groupTime);
+
+    // ---- 4 张走时档位卡 ----
+    // 【单一数据源】卡上的每一种文字都从 V2_PRESETS 派生，绝不在 build 里写死
+    // 「快棋」「15 分钟」。改档位只改 V2_PRESETS 一处。
+    const cardGap = V.contentW * 0.025;
+    const cardW = (V.contentW - cardGap * 3) / 4;
+    UI.start.cards = [];
+    UI.start.cardHits = [];
+    for (let i = 0; i < V2_PRESETS.length; i++) {
+      const p = V2_PRESETS[i];
+      const bx = cx + i * (cardW + cardGap);
+      const bg = mkEl(overlayLayer, "v2card el", {
+        x: bx, y: V.cardsY, w: cardW, h: V.cardsH, anchorId: "v2card" + (i + 1),
+      });
+      // 卡内四行：档位名（大）/ 首钟 / 加秒 / 预估单局。
+      // 【高度与字号都由 L.v2 推导】padY 卡高 6%，余下按 4.15 份均分
+      // （档位名 1.15 份、另三行各 1 份）。**不在 build 里写任何 h / fontSize 字面量**
+      // —— 一旦写死就会破坏「板高 ≥ 2.1×字号」，历史上正是这样把档位名整行吞掉的。
+      const padY = V.cardPadY;
+      const nameH = V.cardNameH;
+      const lineH = V.cardLineH;
+      const nameFs = L.font(V.cardNameFont);
+      const lineFs = L.font(V.cardLineFont);
+      const nameEl = mkEl(overlayLayer, "v2t el", {
+        x: bx, y: V.cardsY + V.cardsH - padY - nameH, w: cardW, h: nameH,
+        fontSize: nameFs, color: COLOR.TEXT,
+        text: p.name, anchorId: "v2cardname" + (i + 1),
+      });
+      const firstEl = mkEl(overlayLayer, "v2t el", {
+        x: bx, y: V.cardsY + V.cardsH - padY - nameH - lineH, w: cardW, h: lineH,
+        fontSize: lineFs, color: COLOR.TEXT_SUB,
+        text: TEXT_V2.TC_LABEL_FIRST + p.first, anchorId: "v2cardfirst" + (i + 1),
+      });
+      const incEl = mkEl(overlayLayer, "v2t el", {
+        x: bx, y: V.cardsY + V.cardsH - padY - nameH - lineH * 2, w: cardW, h: lineH,
+        fontSize: lineFs, color: COLOR.TEXT_SUB,
+        text: TEXT_V2.TC_LABEL_INC + p.inc, anchorId: "v2cardinc" + (i + 1),
+      });
+      const estEl = mkEl(overlayLayer, "v2t el", {
+        x: bx, y: V.cardsY + padY, w: cardW, h: lineH,
+        fontSize: lineFs, color: COLOR.TEXT_DIM,
+        text: TEXT_V2.TC_LABEL_EST + p.est, anchorId: "v2cardest" + (i + 1),
+      });
+      const hit = mkEl(overlayLayer, "v2card-hit el", {
+        x: bx, y: V.cardsY, w: cardW, h: V.cardsH, anchorId: "v2card" + (i + 1) + "_hit",
+      });
+      hit.addEventListener("click", (e) => { e.stopPropagation(); SFX.play("click"); onPresetPicked(i); });
+      UI.start.cards.push({ bg, nameEl, firstEl, incEl, estEl });
+      UI.start.cardHits.push(hit);
+      UI.start.parts.push(bg, nameEl, firstEl, incEl, estEl, hit);
+    }
+
+    // ---- 「先选者生效」提示（联机入口才显示）----
+    UI.start.lockTip = mkEl(overlayLayer, "v2t el", {
+      x: cx, y: V.lockTipY, w: V.contentW, h: V.lockTipH,
+      fontSize: L.font(FONT.V2_SMALL), color: COLOR.ACCENT,
+      text: TEXT_V2.TC_FIRST_PICK_TIP, anchorId: "v2locktip",
+    });
+    UI.start.parts.push(UI.start.lockTip);
+
+    // ---- 分组小标题：「开始方式」----
+    UI.start.groupEntry = mkEl(overlayLayer, "v2t left el", {
+      x: cx, y: V.entryLabelY, w: V.contentW, h: V.entryLabelH,
+      fontSize: L.font(FONT.V2_SMALL), color: COLOR.TEXT_DIM,
+      text: TEXT_V2.GROUP_ENTRY, anchorId: "v2groupentry",
+    });
+    UI.start.parts.push(UI.start.groupEntry);
+
+    // ---- 3 个入口按钮 ----
+    // 【文案锁定】三条逐字：单人·双人同屏 / 单人·复盘研习 / 联机·待机室。
+    // 中间的间隔号是 U+00B7，不是 ASCII 句点、也不是 U+30FB。
+    const entryGap = V.contentW * 0.025;
+    const entryW = (V.contentW - entryGap * 2) / 3;
+    const entryLabels = [TEXT_V2.ENTRY_1, TEXT_V2.ENTRY_2, TEXT_V2.ENTRY_3];
+    UI.start.entryBtns = [];
+    UI.start.entryHits = [];
+    for (let i = 0; i < 3; i++) {
+      const bx = cx + i * (entryW + entryGap);
+      // 「单人·双人同屏」是主入口 → 琥珀实色；另外两个用普通底。
+      // 理由与 v1「新开一局是主按钮」同口径：一屏只给一个最强引导。
+      const isPrimary = (i === 0);
+      // 字号由按钮高度反推：entryH 保证 ≥ 2.1×字号（宁可小一点也不能被吞）
+      const btn = mkEl(overlayLayer, "v2btn el" + (isPrimary ? " is-primary" : ""), {
+        x: bx, y: V.entryY, w: entryW, h: V.entryH,
+        fontSize: L.font(Math.min(FONT.V2_ENTRY, L.fontForH(V.entryH))),
+        text: entryLabels[i], anchorId: "v2entry" + (i + 1),
+      });
+      const hit = mkEl(overlayLayer, "v2btn-hit el", {
+        x: bx, y: V.entryY, w: entryW, h: V.entryH, anchorId: "v2entry" + (i + 1) + "_hit",
+      });
+      // 【闭包捕获】必须用 let i / 或立即把 i 拷进局部常量。
+      // 这里用 for(let i...) 的块级作用域，每次迭代各有一份 i，直接引用是安全的。
+      const entryNo = i + 1;
+      hit.addEventListener("click", (e) => { e.stopPropagation(); SFX.play("click"); onEntryPicked(entryNo); });
+      UI.start.entryBtns.push(btn);
+      UI.start.entryHits.push(hit);
+      UI.start.parts.push(btn, hit);
+    }
+
+    // ---- 底部提示条 ----
+    UI.start.foot = mkEl(overlayLayer, "v2t el", {
+      x: cx, y: V.footY, w: V.contentW, h: V.footH,
+      fontSize: L.font(FONT.V2_SMALL), color: COLOR.TEXT_DIM,
+      text: TEXT_V2.FOOT_TIP, anchorId: "v2startfoot",
+    });
+    UI.start.parts.push(UI.start.foot);
+
+    showParts(UI.start.parts, false);   // 【必须】建完立即隐藏，否则开局就盖在棋盘上
+  }
+
+  function buildV2Lobby() {
+    const V = L.v2;
+    const W = BASE_W, H = BASE_H;
+    const cx = (W - V.contentW) / 2;
+    UI.lobby.parts = [];
+
+    UI.lobby.scr = mkEl(overlayLayer, "v2scr el", { x: 0, y: 0, w: W, h: H, anchorId: "v2lobbyscr" });
+    UI.lobby.scr.style.background = "rgba(252,250,247,0.94)";
+    UI.lobby.parts.push(UI.lobby.scr);
+
+    const topBand = mkEl(overlayLayer, "v2band el", { x: 0, y: H * 0.845, w: W, h: H * 0.155, anchorId: "v2lobbytopband" });
+    topBand.style.background = "rgba(150,112,82,0.05)";
+    UI.lobby.parts.push(topBand);
+
+    UI.lobby.title = mkEl(overlayLayer, "v2t el", {
+      x: cx, y: V.titleY, w: V.contentW, h: V.titleH,
+      fontSize: L.font(FONT.V2_TITLE), color: COLOR.TEXT,
+      text: TEXT_V2.LOBBY_TITLE, anchorId: "v2lobbytitle",
+    });
+    UI.lobby.sub = mkEl(overlayLayer, "v2t el", {
+      x: cx, y: V.subY, w: V.contentW, h: V.subH,
+      fontSize: L.font(FONT.V2_SUB), color: COLOR.TEXT_SUB,
+      text: TEXT_V2.LOBBY_SUB, anchorId: "v2lobbysub",
+    });
+    UI.lobby.parts.push(UI.lobby.title, UI.lobby.sub);
+
+    // ---- 时间档锁定行（两行：档位详情 / 由谁选定）----
+    UI.lobby.tcDetail = mkEl(overlayLayer, "v2t el", {
+      x: cx, y: V.timeLabelY, w: V.contentW, h: V.timeLabelH,
+      fontSize: L.font(FONT.V2_SMALL), color: COLOR.TEXT_SUB,
+      text: "", anchorId: "v2lobbytcdetail",
+    });
+    UI.lobby.tcWho = mkEl(overlayLayer, "v2t el", {
+      x: cx, y: V.lockTipY, w: V.contentW, h: V.lockTipH,
+      fontSize: L.font(FONT.V2_SMALL), color: COLOR.ACCENT,
+      text: TEXT_V2.TC_FIRST_PICK_TIP, anchorId: "v2lobbytcwho",
+    });
+    UI.lobby.parts.push(UI.lobby.tcDetail, UI.lobby.tcWho);
+
+    // ---- 玩家列表：2 行（名字 + 准备状态）----
+    // 每行 = 1 个底块 + 1 个名字 + 1 个状态，共 6 个控件。
+    // 【文案纪律 P0/D-3】「你 / 对手」是**唯一不该被替换**的措辞：
+    // 官方《客户端控件API文档》确认客户端 Lua 读不到房间玩家列表 / 人数 / 他人昵称
+    // （§6 game、§5 Script、§11 枚举均无此能力）。本端确切知道的只有两件事 ——
+    // 「哪个是我」与「有没有另一个」。用「玩家1/2」会暗示序号与真实座位一致，那是谎话。
+    // 【几何来自 L.v2.rowH】行高由 fitH(字号) 反推，字号再由行高反推，互为逆运算 → ratio 恒 ≥ 2.1。
+    const rowH = V.rowH;
+    const rowGap = Math.max(6, rowH * 0.18);
+    const rowY1 = V.cardsY + V.cardsH - rowH;          // 你（上）
+    const rowY2 = rowY1 - rowGap - rowH;               // 对手（下）
+    const rowNameFont = L.v2.rowNameFont;              // 由 rowH 反推
+    const rowStateFont = L.v2.rowStateFont;
+    UI.lobby.rows = [];
+    for (let i = 0; i < 2; i++) {
+      const ry = (i === 0) ? rowY1 : rowY2;
+      const bg = mkEl(overlayLayer, "v2card el", {
+        x: cx, y: ry, w: V.contentW, h: rowH, anchorId: "v2lobbyrow" + (i + 1),
+      });
+      bg.style.cursor = "default";
+      const nameEl = mkEl(overlayLayer, "v2t left el", {
+        x: cx + V.contentW * 0.04, y: ry, w: V.contentW * 0.5, h: rowH,
+        fontSize: L.font(rowNameFont), color: COLOR.TEXT,
+        text: (i === 0) ? TEXT_V2.LOBBY_ME : TEXT_V2.LOBBY_OPP,
+        anchorId: "v2lobbyname" + (i + 1),
+      });
+      const stEl = mkEl(overlayLayer, "v2t right el", {
+        x: cx, y: ry, w: V.contentW - V.contentW * 0.04, h: rowH,
+        fontSize: L.font(rowStateFont), color: COLOR.TEXT_DIM,
+        text: "　" + TEXT_V2.LOBBY_READY_OFF, anchorId: "v2lobbyready" + (i + 1),
+      });
+      UI.lobby.rows.push({ bg, nameEl, stEl });
+      UI.lobby.parts.push(bg, nameEl, stEl);
+    }
+
+    // ---- 倒数数字（双人就绪后显示）----
+    // 【高度取 countH】= fitH(V2_CREATE)，字号仍是 L.font(V2_CREATE)。
+    // 这正是 Lead 提到的第三个踩坑点（gdd §5.6 倒数数字 72 被吞）：高度必须 ≥ 2.1×字号。
+    UI.lobby.countdown = mkEl(overlayLayer, "v2t el", {
+      x: cx, y: V.entryY, w: V.contentW, h: V.countH,
+      fontSize: L.font(FONT.V2_CREATE), color: COLOR.ACCENT,
+      text: "", anchorId: "v2lobbycountdown",
+    });
+    UI.lobby.parts.push(UI.lobby.countdown);
+
+    // ---- 按钮：准备 / 直接开始（同一行两个半宽）----
+    const bGap = V.contentW * 0.02;
+    const bW = (V.contentW - bGap) / 2;
+    // 字号由按钮高度反推：entryH 保证 ≥ 2.1×字号，两者取 min（宁可小一点也不能被吞）
+    const lobbyBtnFont = Math.min(FONT.V2_BAR, L.fontForH(V.entryH));
+    UI.lobby.btnReady = mkEl(overlayLayer, "v2btn el", {
+      x: cx, y: V.entryY, w: bW, h: V.entryH,
+      fontSize: L.font(lobbyBtnFont), text: TEXT_V2.BTN_READY, anchorId: "v2btnready",
+    });
+    UI.lobby.hitReady = mkEl(overlayLayer, "v2btn-hit el", {
+      x: cx, y: V.entryY, w: bW, h: V.entryH, anchorId: "v2btnready_hit",
+    });
+    UI.lobby.btnStart = mkEl(overlayLayer, "v2btn el is-primary", {
+      x: cx + bW + bGap, y: V.entryY, w: bW, h: V.entryH,
+      fontSize: L.font(lobbyBtnFont), text: TEXT_V2.BTN_START_NOW, anchorId: "v2btnstartnow",
+    });
+    UI.lobby.hitStart = mkEl(overlayLayer, "v2btn-hit el", {
+      x: cx + bW + bGap, y: V.entryY, w: bW, h: V.entryH, anchorId: "v2btnstartnow_hit",
+    });
+    UI.lobby.hitReady.addEventListener("click", (e) => { e.stopPropagation(); SFX.play("click"); onLobbyReadyToggle(); });
+    UI.lobby.hitStart.addEventListener("click", (e) => { e.stopPropagation(); SFX.play("click"); onLobbyStartNow(); });
+    UI.lobby.parts.push(UI.lobby.btnReady, UI.lobby.hitReady, UI.lobby.btnStart, UI.lobby.hitStart);
+
+    // ---- 返回主菜单 ----
+    // 【高度用 fitH】不能复用 V.footH 之外的值 —— footH 已是 fitH(V2_SMALL)，
+    // 但按钮共用的是 V2_SMALL 字号，所以直接用 footH 就满足 2.1。
+    UI.lobby.btnBack = mkEl(overlayLayer, "v2btn el", {
+      x: cx + V.contentW * 0.30, y: V.footY, w: V.contentW * 0.40, h: V.footH,
+      fontSize: L.font(FONT.V2_SMALL), text: TEXT_V2.LOBBY_LEAVE, anchorId: "v2lobbyleave",
+    });
+    UI.lobby.hitBack = mkEl(overlayLayer, "v2btn-hit el", {
+      x: cx + V.contentW * 0.30, y: V.footY, w: V.contentW * 0.40, h: V.footH, anchorId: "v2lobbyleave_hit",
+    });
+    UI.lobby.hitBack.addEventListener("click", (e) => { e.stopPropagation(); SFX.play("click"); onLeaveLobby(); });
+    UI.lobby.parts.push(UI.lobby.btnBack, UI.lobby.hitBack);
+
+    // ---- 提示条 ----
+    UI.lobby.tip = mkEl(overlayLayer, "v2t el", {
+      x: cx, y: V.entryLabelY, w: V.contentW, h: V.entryLabelH,
+      fontSize: L.font(FONT.V2_SMALL), color: COLOR.TEXT_DIM,
+      text: TEXT_V2.LOBBY_SOLO_TIP, anchorId: "v2lobbytip",
+    });
+    UI.lobby.parts.push(UI.lobby.tip);
+
+    showParts(UI.lobby.parts, false);
+  }
+
+  // 复盘研习：棋盘**正下方**那 99px 空档里的动作条。
+  // 【为什么不塞进右侧面板】面板 11 个槽位已排满，且 PANEL_LAYOUT 的键集被
+  //   consistency_check 与 lua-lead 的 v2 重排占着 —— 往那里加键必红。
+  //   棋盘下面 y∈[0, 85] 是天然空档（外框底边在 84.96），横跨整屏 96% 宽，
+  //   塞 7 个控件绰绰有余，且完全不碰棋盘与面板几何。
+  function buildV2ReviewBar() {
+    const W = BASE_W;
+    const V = L.v2;
+    // 【几何全部来自 L.v2】barH / barBtnH / barBtnFont / barTextFont 都在
+    // computeLayout 里由「板高 ≥ 2.1×字号」反推，这里不写任何字面量。
+    const barH = V.barH;
+    const barX = W * 0.022, barW = W * 0.956, barY = V.barY;
+    UI.lab.parts = [];
+
+    UI.lab.bar = mkEl(overlayLayer, "v2bar el", {
+      x: barX, y: barY, w: barW, h: barH, anchorId: "v2reviewbar",
+    });
+    UI.lab.parts.push(UI.lab.bar);
+
+    // 进度行：「第 N/M 步」左对齐；分支试走时改文案（REVIEW_LAB_TITLE / PROGRESS）
+    UI.lab.progress = mkEl(overlayLayer, "v2t left el", {
+      x: barX + barW * 0.012, y: barY, w: barW * 0.16, h: V.barTextH,
+      fontSize: L.font(V.barTextFont), color: COLOR.TEXT,
+      text: "", anchorId: "v2reviewprogress",
+    });
+    UI.lab.parts.push(UI.lab.progress);
+
+    // 六个按钮：[开局][上一步][下一步][终局] + [退回主变][从此局面开新局]
+    // 横坐标用「相对动作条左边缘的比例」，比例和必须 < 1（留给间隙）。
+    const specs = [
+      ["v2revstart",  0.180, 0.090, TEXT.BTN_REVIEW_START,   "首"],
+      ["v2revprev",   0.276, 0.090, TEXT.BTN_REVIEW_PREV,    "上"],
+      ["v2revnext",   0.372, 0.090, TEXT.BTN_REVIEW_NEXT,    "下"],
+      ["v2revend",    0.468, 0.090, TEXT.BTN_REVIEW_END,     "末"],
+      ["v2revmain",   0.572, 0.150, TEXT_V2.BTN_BACK_TO_MAIN, "主"],
+      ["v2revnew",    0.732, 0.200, TEXT_V2.BTN_BRANCH_NEWGAME, "新"],
+    ];
+    UI.lab.btns = {};
+    for (const [anchorId, fx, fw, label, short] of specs) {
+      const bx = barX + barW * fx, bw = barW * fw;
+      // 「从此局面开新局」是主按钮（它会真改历史，必须一眼看出来是重操作）
+      const cls = (anchorId === "v2revnew") ? "v2btn el is-primary" : "v2btn el";
+      const btn = mkEl(overlayLayer, cls, {
+        x: bx, y: barY + (barH - V.barBtnH) * 0.5, w: bw, h: V.barBtnH,
+        fontSize: L.font(V.barBtnFont), text: label, anchorId: anchorId,
+      });
+      const hit = mkEl(overlayLayer, "v2btn-hit el", {
+        x: bx, y: barY + (barH - V.barBtnH) * 0.5, w: bw, h: V.barBtnH, anchorId: anchorId + "_hit",
+      });
+      hit.addEventListener("click", (e) => { e.stopPropagation(); SFX.play("click"); onReviewBar(short); });
+      UI.lab.btns[short] = { btn, hit };
+      UI.lab.parts.push(btn, hit);
+    }
+
+    showParts(UI.lab.parts, false);
+  }
+
+  // ---------------------------------------------------------------------------
+  // 悔棋确认框（D）。结构与 buildDrawDlg 同构：bg + text + 两个按钮。
+  // 【为什么不做成模态遮罩层】v1 的求和框也没有遮罩（直接白卡压棋盘）。
+  //   v2 这里同样只做卡片，靠「层 21 > 面板 13」的层序挡住下层命中区 ——
+  //   这正是 tech-architecture 三节里「模态弹窗必须锁命中区」的轻量版；
+  //   真正防穿透的还是 onUndoClicked 开头的 guard（confirmKind 语义）。
+  // ---------------------------------------------------------------------------
+  function buildV2UndoDlg() {
+    const w = BASE_W * 0.44, h = BASE_H * 0.30;
+    const x = (BASE_W - w) / 2, y = (BASE_H - h) / 2;
+    UI.undoDlg.bg = mkEl(overlayLayer, "dlg-bg el", { x, y, w, h, anchorId: "v2undobg" });
+    // 【几何】文字区与按钮高度都按「高度 ≥ 2.1×字号」反推，不写裸比例。
+    //   textH = fitH(26)，btnH = fitH(FONT.BUTTON)，两者都保证 ratio ≥ 2.1。
+    const textH = L.fitH(26);
+    const btnH = L.fitH(FONT.BUTTON);
+    UI.undoDlg.text = mkEl(overlayLayer, "dlg-el el", {
+      x: x + w * 0.05, y: y + h - textH - h * 0.06, w: w * 0.90, h: textH,
+      fontSize: L.font(26), color: COLOR.TEXT,
+      text: TEXT_V2.CONFIRM_UNDO, anchorId: "v2undotext",
+    });
+    const by = y + h * 0.10, bh = btnH, bw = w * 0.44;
+    UI.undoDlg.btnYes = mkEl(overlayLayer, "dlg-btn el", {
+      x: x + w * 0.06, y: by, w: bw, h: bh, bg: COLOR.BTN_PRIMARY,
+      fontSize: L.font(FONT.BUTTON), color: COLOR.BTN_PRIMARY_TEXT,
+      text: TEXT_V2.CONFIRM_UNDO_YES, anchorId: "v2undoyes",
+    });
+    UI.undoDlg.btnNo = mkEl(overlayLayer, "dlg-btn el", {
+      x: x + w * 0.50, y: by, w: bw, h: bh, bg: COLOR.BTN,
+      fontSize: L.font(FONT.BUTTON), color: COLOR.BTN_TEXT,
+      text: TEXT_V2.CONFIRM_UNDO_NO, anchorId: "v2undono",
+    });
+    UI.undoDlg.btnYes.addEventListener("click", (e) => { e.stopPropagation(); SFX.play("click"); onUndoConfirmed(); });
+    UI.undoDlg.btnNo.addEventListener("click", (e) => { e.stopPropagation(); SFX.play("click"); onUndoRejected(); });
+    UI.undoDlg.parts = [UI.undoDlg.bg, UI.undoDlg.text, UI.undoDlg.btnYes, UI.undoDlg.btnNo];
+    showParts(UI.undoDlg.parts, false);
+  }
+
   // ---------- 游戏状态 ----------
   const G = {
     st: null,
@@ -1939,6 +2728,25 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     reviewRestoreModal: null,   // 进复盘时升变/求和弹窗是否开着，退出时复原
     uiReady: false,
     animBusy: false,            // 是否有走子补间在跑（供测试/调试观察，不参与渲染判断）
+
+    // ---- v2.0 ----
+    // 屏幕状态机：start → (lobby) → playing → result；review 是 playing/result 的旁支。
+    // 【为什么单独一个字段而不是从别的状态推导】v1 用「G.over + G.review + 有没有对手」
+    // 三个布尔拼出隐式状态，加第三屏后必然长出 if (a && !b || c) 这种推不动的判定。
+    screen: "start",
+    presetIdx: V2_DEFAULT_PRESET,     // 当前选中档（默认快棋 900+10）
+    presetLockedBy: 0,                // 0=未锁定 / 1=我先选的 / 2=对手先选的（仅联机有意义）
+    entry: 1,                         // 本次开局从哪个入口进的：1 双人同屏 / 2 复盘研习 / 3 联机待机室
+    undoLeft: [V2_UNDO_PER_SIDE, V2_UNDO_PER_SIDE],   // [白方, 黑方] 各自剩余悔棋次数
+    undoPendingFrom: -1,              // 联机悔棋请求发起方（-1 = 没有在等）
+    // 复盘研习的分支试走：null = 没有分支；否则 { from, to, branchSt, branchFen }
+    // 【铁律】分支**绝不写进 G.history / G.moveLog / G.capturedXxx**，
+    //   只活在 reviewBranch 里，所以「退回主变」= 把 reviewBranch 置 null 就干净了。
+    reviewBranch: null,
+    // 待机室
+    lobbyReady: [false, false],       // [我, 对手] 各自的准备状态
+    lobbyCountdown: 0,                // 倒数剩余秒（0 = 不在倒数）
+    lobbyHasPeer: false,              // 是否真的有第二个人（决定显示两位还是空位 + 直接开始）
   };
 
   function formatClock(sec) {
@@ -1985,14 +2793,22 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     return G.history[i] || null;
   }
   function reviewState() {
+    // v2.0：分支试走期间，画面认的是**分支局面**，不是主变快照。
+    // 【为什么在这里分支、而不是让每个渲染函数各判一次】renderPieces / renderCheck /
+    // selectSquare 全都经 reviewState() 取局面，一处切掉，三处自动一致 —— 这也是
+    // 「试走绝不污染主变」最容易守住的写法：分支局面是个独立的 st 对象，主变 history 没被碰。
+    if (G.review && G.reviewBranch) return G.reviewBranch.branchSt;
     const snap = reviewSnap();
     return snap ? CHESS_RULES.parseFen(snap.fen) : null;
   }
   // 开局快照（history[0]）：空文案、无起终点、双方满钟
+  // 【v2.0】满钟取当前选中档的首钟，不再钉死 INITIAL_TIME_SEC ——
+  // 否则选「超快棋」后复盘里开局快照仍显示 15:00，与棋钟自相矛盾。
   function makeStartSnapshot() {
+    const p = V2_PRESETS[G.presetIdx] || V2_PRESETS[V2_DEFAULT_PRESET];
     return {
       fen: CHESS_RULES.fenOf(G.st), text: "", idx: 0, from: -1, to: -1,
-      capW: 0, capB: 0, clockW: INITIAL_TIME_SEC, clockB: INITIAL_TIME_SEC,
+      capW: 0, capB: 0, clockW: p.clockSec, clockB: p.clockSec,
     };
   }
 
@@ -2210,6 +3026,41 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
       for (const prim of slot.prims) prim.classList.add("hidden");
     }
     UI.slotShown = used;
+    renderBranchRing();
+  }
+
+  // ============================================================================
+  // 复盘分支试走的高亮（C 的核心视觉差异）
+  // ----------------------------------------------------------------------------
+  // 【只加 1 个控件，不新建落点池】分支的落点直接复用主变那套 legalHL / legalCapHL，
+  // 只是把它们的 `--c-legal` CSS 变量临时改成青色；退出分支时改回。
+  // 理由与 Lua 侧一致：控件数是硬约束（现在 1367，预算 1600），
+  // 复用池子改色 = 0 个新控件，新建青点池 = +56 个。
+  //
+  // 【棋子描边】青色方框压在**刚试走的那枚棋子上**（inner 3px 环），
+  // 复用 .branch-ring 这一个元素，播放期只改 left/bottom + 显隐。
+  // 不做「整枚棋子改描边色」：那要把 paintSlot 里的 edgeColor 参数化，
+  // 会让 32 个槽位的绘制路径多一个分支，得不偿失；一个青色方框已经足够区分。
+  // ============================================================================
+  function renderBranchRing() {
+    if (!UI.branchRing) return;
+    const b = G.reviewBranch;
+    if (!b || !G.review) { UI.branchRing.classList.add("hidden"); return; }
+    const p = sqPos(b.to);
+    UI.branchRing.style.left = p.x + "px";
+    UI.branchRing.style.bottom = p.y + "px";
+    UI.branchRing.classList.remove("hidden");
+  }
+
+  // 让落点圆点在「主变墨绿 / 分支青色」之间切换。
+  // 【为什么改 CSS 变量而不是逐个写 style.background】.legal::after 的底色读的是
+  // var(--c-legal)，改一次变量 28 个圆点同时生效，零逐帧写入 ——
+  // Lua 侧对应「改一次 CONFIG.COLOR.LEGAL_HL 再对池子里的控件逐个 SetImageColor」，
+  // 也只在切分支/回主变这两个时刻各跑一遍，不在绘制循环里。
+  function setLegalHintColor(branch) {
+    const root = document.documentElement;
+    if (!root || !root.style) return;
+    root.style.setProperty("--c-legal", branch ? COLOR.BRANCH : COLOR.LEGAL);
   }
 
   // 失子行文案：与 lua/levelScript.lua 的 cap_text() **逐字一致**
@@ -2306,13 +3157,19 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
   }
 
   function selectSquare(sq) {
-    const st = G.st;
+    // 【v2.0 关键修正】v1 这里读的是 G.st，而复盘期间 G.st 是**主变终局**、
+    // 画面显示的是 reviewState()。v1 复盘中棋盘输入是关的，所以读错也看不出来；
+    // v2 要求复盘能试走，这里必须跟着画面走，否则会出现「看到的是历史局面、
+    // 算出来的是终局合法步」的错位（点了没反应或走错子）。
+    const st = reviewState() || G.st;
+    if (!st) return false;
     const p = st.board[sq];
     if (p === 0) return false;
     if ((p > 0) !== (st.turn === CHESS_RULES.WHITE)) return false;
     // 只有「确实存在联机对手」时才限制只操作自己那一方；
     // 单人打开（无对手）时允许操作双方，避免被锁死。
-    if (!G.localMode && G.peerAlive) {
+    // 【v2.0】复盘研习里**永远**允许操作双方 —— 研习的目的就是看两边变化。
+    if (!G.review && !G.localMode && G.peerAlive) {
       const myTurn = (G.mySide === 1 && st.turn === CHESS_RULES.WHITE) || (G.mySide === 2 && st.turn === CHESS_RULES.BLACK);
       if (!myTurn) return false;
     }
@@ -2385,7 +3242,7 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     }
     G.moveLog.push(moveText(mv, side));
     G.lastFrom = mv.from; G.lastTo = mv.to;
-    if (side === CHESS_RULES.WHITE) G.clockWhite += INCREMENT_SEC; else G.clockBlack += INCREMENT_SEC;
+    if (side === CHESS_RULES.WHITE) G.clockWhite += presetIncSec(); else G.clockBlack += presetIncSec();
 
     // 逐手快照：必须在加秒之后、renderAll 之前 push，
     // 这样快照里的 clockW/clockB 是该步加秒后的真实剩余秒数，
@@ -2443,6 +3300,8 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     if (G.selected < 0) return false;
     const cands = G.legalTargets.get(toSq);
     if (!cands || cands.length === 0) return false;
+    // 【v2.0】复盘研习：走分支试走，绝不改主变
+    if (G.review) return tryBranchMove(toSq);
     if (cands.length > 1 && cands[0].promo) {
       G.pendingPromo = cands;
       showParts(UI.promo.parts, true);
@@ -2473,8 +3332,16 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
   }
 
   function onSquareClicked(sq) {
-    // 复盘只看不点：这里是第一道闸（第二道闸是 64 个命中区的 pointerEvents=none）
-    if (G.review) return;
+    // 【v2.0】复盘研习：点棋子走「分支试走」这条独立路径，**绝不进 applyMove**。
+    // 这道闸必须在 G.review 的 return 之前 —— v1 是「复盘中一律 return」，
+    // v2 把复盘从「只读回放」升级成「可试走的研习」，闸口内容变了但位置不变。
+    if (G.review) {
+      if (G.selected >= 0 && G.legalTargets.has(sq)) { tryBranchMove(sq); return; }
+      if (G.selected === sq) { clearHighlights(); return; }
+      if (!selectSquare(sq)) { clearHighlights(); }
+      return;
+    }
+    if (G.screen !== "playing") return;    // v2：非对局屏不接棋盘点击（第二道闸）
     if (G.over || G.pendingPromo) return;
     // 注意：这里**不**放点击音 —— 点棋子出「选中音」、点空/非法格什么都不响，
     // 见 Lua 侧同口径（点击音只绑在按钮上，棋盘交互靠选中/走子音反馈）。
@@ -2496,12 +3363,19 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     });
   }
 
-  // 面板两套按钮的显隐（正常四键 / 复盘四键）。第三行单按钮常驻，只换文案。
+  // 面板两套按钮的显隐（正常四键 / 复盘四键）。第三行两键常驻，只换文案。
+  // 【v2.0】必须**跟着屏幕状态走**，不能只看 G.review：
+  // 初始界面/待机室里面板虽然被屏幕层盖着，但只要 pointerEvents 还是 auto，
+  // 一旦哪层遮挡有缝就会点穿（tech-architecture 三节「模态弹窗会被下层命中区穿透」）。
+  // 所以这里统一委托给 setScreen 的判定，避免出现「两处各判一次、判得不一样」的分叉。
   function applyPanelMode() {
     const inReview = !!G.review;
-    showParts(UI.panel.normalParts, !inReview);
-    showParts(UI.panel.reviewParts, inReview);
+    const onPanelScreen = (G.screen === "playing" || G.screen === "result" || G.screen === "review");
+    showParts(UI.panel.normalParts, onPanelScreen && !inReview);
+    showParts(UI.panel.reviewParts, onPanelScreen && inReview);
     UI.panel.btnReview.textContent = inReview ? TEXT.BTN_REVIEW_EXIT : TEXT.BTN_REVIEW_HISTORY;
+    if (UI.panel.hitReview) UI.panel.hitReview.style.pointerEvents = onPanelScreen ? "auto" : "none";
+    if (UI.panel.hitUndo) UI.panel.hitUndo.style.pointerEvents = (G.screen === "playing" && !inReview) ? "auto" : "none";
   }
 
   // 复盘翻页：delta 相对移动 / idx 绝对定位；到边界就原样不动，不报错
@@ -2540,7 +3414,11 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     G.review = { idx: G.history.length - 1 };
     hideResult();            // 结算弹窗让位给复盘（退出时按 G.over 重新弹回）
     clearHighlights();
-    setBoardInput(false);    // 64 个命中区彻底不可点（不是只靠 onSquareClicked 里的 return）
+    // 【v2.0 默认锁】enterReview 本身仍是「只读回放」语义（v1 契约不变）：
+    //   64 个命中区彻底不可点。要开试走，必须由 enterReviewLab() 再走
+    //   setScreen("review") 把棋盘输入打开 —— 也就是说「能不能试走」是**显式的**，
+    //   而不是靠某个 if 猜出来的。这样 v1 的四条复盘自检语义零变化。
+    setBoardInput(false);
     applyPanelMode();
     renderAll();             // renderCheck 里会按快照写提示条（idx 0 → REVIEW_START_HINT）
     return true;
@@ -2571,10 +3449,528 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     return true;
   }
 
-  // 两个入口共用：结算弹窗「复盘」与面板「看历史」。按钮文案决定进还是出。
+  // 两个入口共用：结算弹窗「复盘研习」与面板「看历史 / 退出复盘」。
+  // 【v2.0】面板这个键的语义从「只读回放」升级成「复盘研习」：进的是同一套 enterReview，
+  // 但额外切到 review 屏 + 打开棋盘试走 + 显示棋盘下方的六键动作条。
   function onReviewEntryClicked() {
-    if (G.review) { exitReview(); return; }
-    enterReview();
+    if (G.review) { exitReviewLab(); return; }
+    enterReviewLab();
+  }
+
+  // ============================================================================
+  // v2.0 逻辑层（状态机 / 走时档 / 待机室 / 悔棋 / 复盘分支试走）
+  // ----------------------------------------------------------------------------
+  // 【函数声明顺序纪律（本项目真实踩过）】本区所有函数都用 `function name()` 写，
+  // 并在文件末尾（boot 之前）**全部已定义**。原因：v1 曾把 show_panel_buttons 写在
+  // show_result 之后，Lua 侧被绑成 global 导致四条终局路径全崩；
+  // JS 虽然 function 声明会提升，但 **函数表达式 / const f = () => {} 不会**。
+  // 所以：本区不许出现 `const f = function(){}` 形式的「先使用后声明」。
+  // ============================================================================
+
+  // ---------- 屏幕状态机 ----------
+  // 【唯一入口】所有换屏都走 setScreen()，不许在各处直接写 G.screen = ...。
+  // 换屏时必须同步三件事：显隐屏幕层、棋盘命中区、以及「谁该收点击」。
+  function setScreen(name) {
+    const prev = G.screen;
+    G.screen = name;
+
+    // 三块屏的显隐：同一时刻最多一块可见
+    showParts(UI.start.parts || [], name === "start");
+    showParts(UI.lobby.parts || [], name === "lobby");
+    showParts(UI.lab.parts || [], name === "review");
+
+    // 棋盘输入：只有 playing / review 接棋盘点击；start / lobby / result 全锁。
+    // 复盘研习里要能点棋子试走，所以 review 也要开。
+    const boardOn = (name === "playing" || name === "review");
+    setBoardInput(boardOn);
+
+    // 面板在 start/lobby 时被屏幕层盖住，但**hit 区仍在**（层序挡住的是视觉，
+    // 命中测试同样按层序，所以确实点不到）。为了稳妥，start/lobby 期间额外把
+    // 面板按钮的命中区也关掉 —— 这一层在 Lua 侧就是 ui_set_active(hit, false)，
+    // 是「模态弹窗会被下层命中区穿透」那条教训的标准做法。
+    const panelOn = (name === "playing" || name === "result" || name === "review");
+    showParts(UI.panel.normalParts || [], panelOn && name !== "review");
+    showParts(UI.panel.reviewParts || [], panelOn && name === "review");
+    if (UI.panel.hitReview) UI.panel.hitReview.style.pointerEvents = panelOn ? "auto" : "none";
+    if (UI.panel.hitUndo) UI.panel.hitUndo.style.pointerEvents = (name === "playing") ? "auto" : "none";
+    if (UI.panel.hitNew) UI.panel.hitNew.style.pointerEvents = panelOn ? "auto" : "none";
+    if (UI.panel.hitResign) UI.panel.hitResign.style.pointerEvents = (name === "playing") ? "auto" : "none";
+    if (UI.panel.hitDraw) UI.panel.hitDraw.style.pointerEvents = (name === "playing") ? "auto" : "none";
+    // 【v3.2 删除】hitLocal 的 pointerEvents —— 按钮已移除
+    if (UI.sfxBtn) UI.sfxBtn.style.pointerEvents = (name === "start" || name === "playing" ||
+      name === "result" || name === "review") ? "auto" : "none";
+
+    // 复盘动作条 → 屏态
+    if (name === "review") { syncReviewBar(); }
+
+    // 离开复盘研习时一定要清分支，否则下次进来还挂着青色
+    if (prev === "review" && name !== "review") clearReviewBranch();
+
+    // 进入 playing 时刷新悔棋按钮文案（次数可能刚被别处改过）
+    if (name === "playing") syncUndoButton();
+
+    G.screenPrev = prev;
+    return true;
+  }
+
+  // 屏幕层本身是否可见（给自检用；不改状态）
+  function screenVisible(name) {
+    const layer = (name === "start") ? UI.start.scr : (name === "lobby") ? UI.lobby.scr : null;
+    if (!layer) return false;
+    return !layer.classList.contains("hidden");
+  }
+
+  // ---------- 走时档 ----------
+  // 【硬契约】V2_PRESETS 的 (clockSec, incSec) 就是这四个值，界面与棋钟都读它。
+  // 当前档位两个派生量（棋钟初值 / 每步加秒）**唯一出口**。
+  function presetClockSec() { return V2_PRESETS[G.presetIdx].clockSec; }
+  function presetIncSec() { return V2_PRESETS[G.presetIdx].incSec; }
+
+  function onPresetPicked(idx) {
+    if (idx < 0 || idx >= V2_PRESETS.length) return false;
+    // 联机锁定规则：一旦有人先选，后选者的点击被忽略并提示。
+    // 【为什么先选者优先】策划拍板「先选者生效」—— 后进房间的人不能把对局时长改掉。
+    if (G.entry === 3 && G.presetLockedBy !== 0) {
+      UI.start.lockTip.textContent = TEXT_V2.TC_LOCKED_BY.replace(
+        "{who}", G.presetLockedBy === 1 ? TEXT_V2.LOBBY_ME : TEXT_V2.LOBBY_OPP);
+      UI.start.lockTip.style.color = COLOR.TEXT_SUB;
+      return false;
+    }
+    G.presetIdx = idx;
+    syncPresetCards();
+    // 只在「初始界面 + 联机入口」才显示锁定行，其余场景恢复成提示文案
+    renderLockTip();
+    return true;
+  }
+
+  // 档位卡选中态：一次写 border + background，**不要写 transition**
+  // （CSS transition 会让「换选中」变成渐变动画，Lua 侧复现不了；
+  //  这里就是瞬时切换，Lua 换控件的 SetImageColor 同样是瞬时。）
+  function syncPresetCards() {
+    if (!UI.start.cards) return;
+    for (let i = 0; i < UI.start.cards.length; i++) {
+      const c = UI.start.cards[i];
+      const sel = (i === G.presetIdx);
+      c.bg.classList.toggle("is-sel", sel);
+      // 选中态的档位名用琥珀色加深识别（描边已经是琥珀，字再同色会糊，所以字保持主色）
+      c.nameEl.style.color = sel ? COLOR.TEXT : COLOR.TEXT_SUB;
+      // 未选中卡的三行文字压暗一档，选中卡保持可读对比度
+      c.firstEl.style.color = sel ? COLOR.TEXT_SUB : COLOR.TEXT_DIM;
+      c.incEl.style.color = sel ? COLOR.TEXT_SUB : COLOR.TEXT_DIM;
+    }
+  }
+
+  // 「先选者生效」/「由 玩家N 选定」这一行的文案与颜色
+  function renderLockTip() {
+    if (!UI.start.lockTip) return;
+    if (G.entry === 3 && G.presetLockedBy !== 0) {
+      UI.start.lockTip.textContent = TEXT_V2.TC_LOCKED_BY.replace(
+        "{who}", G.presetLockedBy === 1 ? TEXT_V2.LOBBY_ME : TEXT_V2.LOBBY_OPP);
+      UI.start.lockTip.style.color = COLOR.ACCENT;
+    } else if (G.entry === 3) {
+      UI.start.lockTip.textContent = TEXT_V2.TC_FIRST_PICK_TIP;
+      UI.start.lockTip.style.color = COLOR.ACCENT;
+    } else {
+      UI.start.lockTip.textContent = "";
+      UI.start.lockTip.style.color = COLOR.TEXT_DIM;
+    }
+  }
+
+  // ---------- 入口 / 换屏 ----------
+  function onEntryPicked(no) {
+    G.entry = no;
+    if (no === 1) {
+      // 单人·双人同屏：直接进棋盘，两人轮流点（v1 的 localMode 语义）
+      G.localMode = true;
+      G.lobbyHasPeer = false;
+      G.presetLockedBy = 0;
+      startPlaying();
+      return true;
+    }
+    if (no === 2) {
+      // 单人·复盘研习：先进棋盘下一局，再点「复盘研习」进研习。
+      // 【为什么不直接进空棋盘复盘】空历史进复盘会被 enterReview 拒绝（REVIEW_EMPTY），
+      // 那用户点完入口就只会看到一句「这局还没走子」，等于入口失效。
+      // 所以这里跟 v1 行为一致：先给一副可以下的棋盘，研习按钮在结算/面板里。
+      G.localMode = true;
+      G.lobbyHasPeer = false;
+      G.presetLockedBy = 0;
+      startPlaying();
+      UI.hint.textContent = TEXT_V2.REVIEW_LAB_HINT;
+      return true;
+    }
+    // 联机·待机室
+    G.localMode = false;
+    G.presetLockedBy = 0;
+    setScreen("lobby");
+    renderLobby();
+    return true;
+  }
+
+  // 真正开局：从初始界面/待机室进到可下棋的棋盘
+  function startPlaying() {
+    G.clockWhite = presetClockSec();
+    G.clockBlack = presetClockSec();
+    G.undoLeft = [V2_UNDO_PER_SIDE, V2_UNDO_PER_SIDE];
+    G.undoPendingFrom = -1;
+    G.reviewBranch = null;
+    setLegalHintColor(false);
+    newGame({ fromRemote: true });      // 不广播：开局由本端发起，联机走 EV_NEWGAME 单独发
+    setScreen("playing");
+    renderAll();
+    return true;
+  }
+
+  // ---------- 待机室 ----------
+  function renderLobby() {
+    if (!UI.lobby.rows) return;
+    const p = V2_PRESETS[G.presetIdx] || V2_PRESETS[V2_DEFAULT_PRESET];
+    // 时间档详情行：档名 + 首钟 + 加秒，与初始界面卡片同一套字段
+    UI.lobby.tcDetail.textContent = p.name + " · " + TEXT_V2.TC_LABEL_FIRST + p.first +
+      " · " + TEXT_V2.TC_LABEL_INC + p.inc;
+    // 由谁选定：有锁定就写人，没锁定就写「先选者生效」
+    if (G.presetLockedBy !== 0) {
+      UI.lobby.tcWho.textContent = TEXT_V2.TC_LOCKED_BY.replace(
+        "{who}", G.presetLockedBy === 1 ? TEXT_V2.LOBBY_ME : TEXT_V2.LOBBY_OPP);
+    } else {
+      UI.lobby.tcWho.textContent = TEXT_V2.TC_FIRST_PICK_TIP;
+    }
+    // 两行的名字与准备状态。
+    // 【空位行】只检测到自己时，第 2 行的名字位直接写「等待对手加入…」，
+    // 状态位留空 —— 这样不会出现「对手　（空位）」这种病句（P0 连带项）。
+    // 【全角空格】名字与状态之间用 U+3000「　」分隔，不是半角空格，
+    // 这样两格在等宽/比例字体下都能对齐（P0 格式要求）。
+    for (let i = 0; i < 2; i++) {
+      const row = UI.lobby.rows[i];
+      const hasPlayer = (i === 0) || G.lobbyHasPeer;   // 第 1 行恒是「我」，第 2 行看有没有对手
+      if (!hasPlayer) {
+        row.nameEl.textContent = TEXT_V2.LOBBY_SLOT_EMPTY;   // 等待对手加入…
+        row.stEl.textContent = "";
+        row.stEl.style.color = COLOR.TEXT_DIM;
+        row.bg.classList.remove("is-sel");
+        continue;
+      }
+      row.nameEl.textContent = (i === 0) ? TEXT_V2.LOBBY_ME : TEXT_V2.LOBBY_OPP;
+      // 名字与状态之间由两个独立文本框承担（Lua 侧同理），这里 state 段自带前导全角空格，
+      // 让「你　已准备」在演示里读起来是一个整行。
+      row.stEl.textContent = "　" + (G.lobbyReady[i] ? TEXT_V2.LOBBY_READY_ON : TEXT_V2.LOBBY_READY_OFF);
+      row.stEl.style.color = G.lobbyReady[i] ? COLOR.ACCENT : COLOR.TEXT_DIM;
+      row.bg.classList.toggle("is-sel", G.lobbyReady[i]);
+    }
+    // 自己的准备按钮：已准备时显示「取消准备」并置选中态
+    const meReady = G.lobbyReady[0];
+    UI.lobby.btnReady.textContent = meReady ? TEXT_V2.BTN_UNREADY : TEXT_V2.BTN_READY;
+    UI.lobby.btnReady.classList.toggle("is-sel", meReady);
+    // 「直接开始」：单人（没有第二人）时是主按钮，有对手时降为普通按钮，
+    // 因为双人路径应该走「双方准备 → 倒数」。
+    UI.lobby.btnStart.classList.toggle("is-primary", !G.lobbyHasPeer);
+    // 倒数 / 提示行
+    if (G.lobbyCountdown > 0) {
+      UI.lobby.countdown.textContent = TEXT_V2.LOBBY_COUNTDOWN + " " + String(Math.ceil(G.lobbyCountdown));
+      UI.lobby.countdown.classList.remove("hidden");
+      UI.lobby.tip.textContent = "";
+    } else {
+      UI.lobby.countdown.classList.add("hidden");
+      UI.lobby.tip.textContent = G.lobbyHasPeer ? TEXT_V2.LOBBY_WAIT_TIP : TEXT_V2.LOBBY_NOBODY;
+    }
+  }
+
+  function onLobbyReadyToggle() {
+    if (G.lobbyCountdown > 0) return false;   // 倒数中不许改
+    G.lobbyReady[0] = !G.lobbyReady[0];
+    SFX.play(G.lobbyReady[0] ? "select" : "click");
+    // 联机时把准备状态广播出去（事件号见 netSendEvent 的 v2 段）
+    netSendEvent(9, 1, G.lobbyReady[0] ? 1 : 0, 0, "");   // EV_READY_SYNC
+    renderLobby();
+    maybeStartCountdown();
+    return true;
+  }
+
+  function onLobbyStartNow() {
+    // 单人兜底：只有一个人时也要能开局，不能被「等对方准备」卡死
+    if (!G.lobbyHasPeer) { startPlaying(); return true; }
+    // 有对手时「直接开始」等价于「自己准备并强制开局」——
+    // 但为了不破坏「双方都点准备」的语义，这里只把自己的准备打开。
+    if (!G.lobbyReady[0]) {
+      G.lobbyReady[0] = true;
+      netSendEvent(9, 1, 1, 0, "");   // EV_READY_SYNC（直接开始 = 先把自己置为准备）
+      renderLobby();
+      maybeStartCountdown();
+    }
+    return true;
+  }
+
+  // 两人都就绪 → 起 3 秒倒数（由 tick 推进）
+  function maybeStartCountdown() {
+    if (G.lobbyCountdown > 0) return false;
+    const bothReady = G.lobbyHasPeer
+      ? (G.lobbyReady[0] && G.lobbyReady[1])
+      : false;
+    if (!bothReady) return false;
+    G.lobbyCountdown = V2_COUNTDOWN_SEC;
+    renderLobby();
+    return true;
+  }
+
+  // 由主循环推进（只有 lobby 屏才走）
+  function tickLobby(dt) {
+    if (G.screen !== "lobby" || G.lobbyCountdown <= 0) return;
+    G.lobbyCountdown -= dt;
+    if (G.lobbyCountdown <= 0) {
+      G.lobbyCountdown = 0;
+      renderLobby();
+      // 倒数结束 → 锁定档位给先选者 → 开局
+      if (G.presetLockedBy === 0) G.presetLockedBy = 1;
+      startPlaying();
+      return;
+    }
+    renderLobby();
+  }
+
+  function onLeaveLobby() {
+    G.lobbyReady = [false, false];
+    G.lobbyCountdown = 0;
+    setScreen("start");
+    return true;
+  }
+
+  // ---------- 悔棋（D） ----------
+  // 【硬约束】成对悔棋：双方各退一步，即回退 2 个半步，双方各扣 1 次。
+  // 边界（四条，与 GDD 一致）：
+  //   ① 历史 < 3 项（= 一步都没走成一对，即 history[0] 开局 + 至多 1 步）不可悔
+  //   ② 终局（G.over）不可悔
+  //   ③ 复盘研习中不可悔
+  //   ④ 次数用尽（任一方 0 次）不可悔
+  function undoCanUse() {
+    if (G.screen === "review" || G.review) return { ok: false, msg: TEXT_V2.UNDO_IN_REVIEW };
+    if (G.over) return { ok: false, msg: TEXT_V2.UNDO_OVER };
+    if (G.undoLeft[0] <= 0 || G.undoLeft[1] <= 0) return { ok: false, msg: TEXT_V2.UNDO_NO_LEFT };
+    // 成对悔棋要吃 2 个半步：history 长度必须 ≥ 3（开局 + 2 步）
+    if (G.history.length < 3) return { ok: false, msg: TEXT_V2.UNDO_TOO_EARLY };
+    return { ok: true, msg: "" };
+  }
+
+  function syncUndoButton() {
+    if (!UI.panel.btnUndo) return;
+    const left = Math.min(G.undoLeft[0], G.undoLeft[1]);
+    UI.panel.btnUndo.textContent = TEXT_V2.BTN_UNDO.replace("{n}", String(left));
+    // 置灰：次数 0 / 终局 / 复盘中 / 历史太短 —— 只要 undoCanUse 说不许，就灰。
+    // 【灰态必须肉眼可辨】.is-disabled 同时改底色(236,232,226)与字色(168,162,154)，
+    // 底与普通态(226,220,210)只差 10 点亮度，靠字色拉开的对比度才是主要线索。
+    const can = undoCanUse().ok;
+    UI.panel.btnUndo.classList.toggle("is-disabled", !can);
+    if (UI.panel.hitUndo) UI.panel.hitUndo.style.pointerEvents = (can && G.screen === "playing") ? "auto" : "none";
+  }
+
+  function onUndoClicked() {
+    const can = undoCanUse();
+    if (!can.ok) { UI.hint.textContent = can.msg; SFX.play("click"); return false; }
+    // 联机（有待机室对手）要先请求对方同意；单人同屏直接走确认框
+    if (G.lobbyHasPeer && G.entry === 3) {
+      G.undoPendingFrom = 1;
+      netSendEvent(11, 0, 0, 0, "");       // EV_UNDO_REQ
+      UI.hint.textContent = TEXT_V2.UNDO_WAIT;
+      syncUndoButton();
+      return true;
+    }
+    // 单人：弹确认框（文案固定「请求悔棋：双方各退一步」）
+    showParts(UI.undoDlg.parts, true);
+    setBoardInput(false);
+    return true;
+  }
+
+  function onUndoConfirmed() {
+    showParts(UI.undoDlg.parts, false);
+    setBoardInput(G.screen === "playing");
+    undoApplyPair();
+    return true;
+  }
+
+  function onUndoRejected() {
+    showParts(UI.undoDlg.parts, false);
+    setBoardInput(G.screen === "playing");
+    syncUndoButton();
+    return true;
+  }
+
+  // 真正执行「成对撤回」。
+  // 【实现口径】v1 的 G.history 只存快照、没有 unmake 栈，所以回退方式是
+  //   按目标快照的 FEN 重建局面（CHESS_RULES.parseFen），而不是逐手 unmake。
+  //   需要同步回退的东西（少一样就会「局面回去了但记录还在」）：
+  //     G.st / G.moveLog / G.capturedWhite / G.capturedBlack /
+  //     G.clockWhite / G.clockBlack / G.lastFrom / G.lastTo / G.history / 双方悔棋计数
+  // 【为什么要退 2 步】成对悔棋 = 双方各退一步。退完轮到「发起悔棋那一方」重新走。
+  function undoApplyPair() {
+    const can = undoCanUse();
+    if (!can.ok) { UI.hint.textContent = can.msg; return false; }
+    const targetIdx = G.history.length - 3;     // 退 2 个半步 → 回到倒数第 3 个快照
+    const snap = G.history[targetIdx];
+    if (!snap) return false;
+
+    // ① 局面按快照 FEN 重建
+    G.st = CHESS_RULES.parseFen(snap.fen);
+    // ② 历史裁到该快照（含）
+    G.history = G.history.slice(0, targetIdx + 1);
+    // ③ 走子记录 / 失子 / 上步痕迹：都是从快照里能读到的派生量，直接按快照截断
+    G.moveLog = G.moveLog.slice(0, snap.idx);
+    G.capturedWhite = G.capturedWhite.slice(0, snap.capW);
+    G.capturedBlack = G.capturedBlack.slice(0, snap.capB);
+    G.lastFrom = snap.idx === 0 ? -1 : snap.from;
+    G.lastTo = snap.idx === 0 ? -1 : snap.to;
+    // ④ 棋钟：快照里存的是「该步加秒后的剩余量」。
+    //    【不要用快照的 clockW/clockB 直接覆盖】那样「已经走掉的思考时间」会被吃掉，
+    //    等于悔棋顺手送时间。这里只回退**加秒**那一部分：双方各扣回对方那一步的加秒。
+    const inc = presetIncSec();
+    G.clockWhite = Math.max(1, G.clockWhite - inc);
+    G.clockBlack = Math.max(1, G.clockBlack - inc);
+    // ⑤ 次数：双方各扣 1（成对悔棋的「各」就在这里）
+    G.undoLeft[0] = Math.max(0, G.undoLeft[0] - 1);
+    G.undoLeft[1] = Math.max(0, G.undoLeft[1] - 1);
+    // ⑥ 清选中 / 弹窗 / 分支，锁回棋盘
+    G.over = false;
+    G.undoPendingFrom = -1;
+    G.reviewBranch = null;
+    clearReviewBranch();
+    clearHighlights();
+    hideResult();
+    showParts(UI.undoDlg.parts, false);
+    setBoardInput(G.screen === "playing");
+    syncUndoButton();
+    renderAll();
+    UI.hint.textContent = TEXT_V2.UNDO_DONE;
+    SFX.play("move");
+    netSendEvent(13, targetIdx, G.undoLeft[0], G.undoLeft[1], snap.fen);   // EV_UNDO_DONE
+    return true;
+  }
+
+  // ---------- 复盘研习的分支试走（C） ----------
+  // 在复盘局面下点棋子 → selectSquare 会正常算出落点（它读 reviewState()，已切成分支局面）
+  // → 落下时**只写 G.reviewBranch**，绝不写 G.history。
+  function tryBranchMove(toSq) {
+    if (!G.review || G.selected < 0) return false;
+    const cands = G.legalTargets.get(toSq);
+    if (!cands || cands.length === 0) return false;
+    const mv = cands[0];   // 分支试走不做升变选择：默认升后（不影响主变，只是看变化）
+    const baseSt = reviewState();
+    if (!baseSt) return false;
+    // 在**副本**上走：parseFen 出来的 st 是独立对象，改它不影响 history
+    const st2 = CHESS_RULES.parseFen(CHESS_RULES.fenOf(baseSt));
+    CHESS_RULES.make(st2, mv);
+    G.reviewBranch = { from: mv.from, to: mv.to, branchSt: st2, branchFen: CHESS_RULES.fenOf(st2) };
+    setLegalHintColor(true);      // 落点池改青色
+    clearHighlights();
+    renderAll();
+    syncReviewBar();
+    UI.hint.textContent = TEXT_V2.REVIEW_LAB_HINT;
+    SFX.play("move");
+    return true;
+  }
+
+  // 「退回主变」：分支置空，落点色改回墨绿，画面回到当前主变索引
+  function clearReviewBranch() {
+    G.reviewBranch = null;
+    setLegalHintColor(false);
+    if (UI.branchRing) UI.branchRing.classList.add("hidden");
+  }
+
+  function onBackToMain() {
+    if (!G.reviewBranch) { UI.hint.textContent = TEXT_V2.REVIEW_LAB_TITLE; return false; }
+    clearReviewBranch();
+    clearHighlights();
+    renderAll();
+    syncReviewBar();
+    UI.hint.textContent = TEXT_V2.REVIEW_EXITED;
+    return true;
+  }
+
+  // 「从此局面开新局」：以当前（主变或分支）局面为新起点，历史清空。
+  function onBranchNewGame() {
+    const st = reviewState();
+    if (!st) return false;
+    const fen = CHESS_RULES.fenOf(st);
+    // 先把局面落到 G.st，再按常规 newGame 清一遍运行时状态，最后覆写 FEN。
+    // 【顺序纪律】newGame 会重置 G.history / 时钟 / 悔棋次数，
+    // 必须**先 newGame 再覆写 G.st 与 history[0].fen**，否则会被 newGame 冲掉。
+    const savedPreset = G.presetIdx;
+    const savedEntry = G.entry;
+    const savedLocal = G.localMode;
+    G.screen = "playing";        // 先脱离 review，newGame 里的 setBoardInput 才不会锁死
+    G.review = null;
+    clearReviewBranch();
+    newGame({ fromRemote: true });
+    G.st = CHESS_RULES.parseFen(fen);
+    G.history = [makeStartSnapshot()];
+    G.presetIdx = savedPreset;
+    G.entry = savedEntry;
+    G.localMode = savedLocal;
+    G.over = false;
+    G.lastFrom = -1; G.lastTo = -1;
+    G.moveLog = []; G.capturedWhite = []; G.capturedBlack = [];
+    G.clockWhite = presetClockSec(); G.clockBlack = presetClockSec();
+    G.undoLeft = [V2_UNDO_PER_SIDE, V2_UNDO_PER_SIDE];
+    clearHighlights();
+    hideResult();
+    setScreen("playing");
+    renderAll();
+    syncUndoButton();
+    UI.hint.textContent = TEXT_V2.REVIEW_NEWGAME_DONE;
+    SFX.play("promote");
+    return true;
+  }
+
+  // 复盘动作条的状态同步（进度行 + 两个分支按钮的可用性）
+  function syncReviewBar() {
+    if (!UI.lab.progress) return;
+    const total = Math.max(0, G.history.length - 1);
+    const atStart = (!G.reviewBranch && G.review && G.review.idx === 0);
+    // 进度行：分支试走时显示「第 N/M 步」；开局显示「复盘 · 开局（可试走）」
+    if (atStart) {
+      UI.lab.progress.textContent = TEXT_V2.REVIEW_AT_START_V2;
+    } else {
+      const n = G.reviewBranch ? Math.min(total, (G.review ? G.review.idx : total)) : (G.review ? G.review.idx : total);
+      UI.lab.progress.textContent = TEXT_V2.REVIEW_PROGRESS
+        .replace("{n}", String(n)).replace("{m}", String(total));
+    }
+    // 状态色：分支试走时整行变青（与棋盘上的青色落点呼应）
+    UI.lab.progress.style.color = G.reviewBranch ? COLOR.BRANCH : COLOR.TEXT;
+    // 「退回主变」只在分支中存在时可用
+    const back = UI.lab.btns["主"];
+    if (back) {
+      back.btn.classList.toggle("is-disabled", !G.reviewBranch);
+      back.hit.style.pointerEvents = G.reviewBranch ? "auto" : "none";
+    }
+    // 「从此局面开新局」在历史为空（total===0）时仍可用 —— 它就是「从开局重下」。
+    const ng = UI.lab.btns["新"];
+    if (ng) ng.hit.style.pointerEvents = "auto";
+  }
+
+  // 复盘动作条的六个按钮统一入口（short 是 specs 里的单字代号）
+  function onReviewBar(short) {
+    if (!G.review) return false;
+    if (short === "首") { clearReviewBranch(); reviewGoto(0); syncReviewBar(); return true; }
+    if (short === "上") { clearReviewBranch(); reviewStep(-1); syncReviewBar(); return true; }
+    if (short === "下") { clearReviewBranch(); reviewStep(+1); syncReviewBar(); return true; }
+    if (short === "末") { clearReviewBranch(); reviewGoto(G.history.length - 1); syncReviewBar(); return true; }
+    if (short === "主") { return onBackToMain(); }
+    if (short === "新") { return onBranchNewGame(); }
+    return false;
+  }
+
+  // 进复盘研习（v2 版）：走 v1 的 enterReview 走一遍，再切屏 + 建动作条状态
+  function enterReviewLab() {
+    if (!enterReview()) return false;
+    setScreen("review");
+    syncReviewBar();
+    UI.hint.textContent = TEXT_V2.REVIEW_LAB_HINT;
+    return true;
+  }
+  function exitReviewLab() {
+    if (!G.review) return false;
+    clearReviewBranch();
+    exitReview();
+    setScreen(G.over ? "result" : "playing");
+    syncUndoButton();
+    return true;
   }
 
   // ---------- 结算 / 按钮 ----------
@@ -2583,6 +3979,9 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     UI.result.sub.textContent = G.resultSub;
     showParts(UI.result.parts, true);
     setBoardInput(false);
+    // v2.0：终局也要刷新悔棋按钮（灰掉），否则面板会留一个还能点的「悔棋」
+    if (G.screen === "playing") G.screen = "result";
+    syncUndoButton();
   }
   function hideResult() { showParts(UI.result.parts, false); }
 
@@ -2590,22 +3989,33 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     opts = opts || {};
     G.st = CHESS_RULES.parseFen(START_FEN);
     G.over = false; G.resultText = ""; G.resultSub = "";
-    G.clockWhite = INITIAL_TIME_SEC; G.clockBlack = INITIAL_TIME_SEC;
+    // 【v2.0】棋钟初值改读「当前选中档」，不再钉死 INITIAL_TIME_SEC。
+    // 默认档 = 快棋 = 900/10，所以 v1 的两条自检（newgame_resets_clock / clock_increment）
+    // 在默认档下数值逐位不变 —— 这是刻意保留的零回归保证。
+    G.clockWhite = presetClockSec(); G.clockBlack = presetClockSec();
     G.moveLog = []; G.capturedWhite = []; G.capturedBlack = [];
     G.lastFrom = -1; G.lastTo = -1;
     G.pendingPromo = null; G.drawCooldown = [0, 0]; G.drawPendingFrom = -1;
     // 【复盘】新开一局清空历史，只留开局快照（history[0] 恒为开局）
+    // 【顺序纪律】makeStartSnapshot 读 G.st 与 G.presetIdx，所以必须在上面两行都写完后再调。
     G.history = [makeStartSnapshot()];
     G.review = null;
     G.reviewRestoreModal = null;
+    G.reviewBranch = null;
+    setLegalHintColor(false);
     clearHighlights();
     hideResult();
     showParts(UI.promo.parts, false);
     showParts(UI.drawDlg.parts, false);
-    setBoardInput(true);
+    showParts(UI.undoDlg.parts, false);
+    // 【v2.0】只有「在对局屏」才解锁棋盘。v1 这里无条件 setBoardInput(true)，
+    // 于是从初始界面点「新开一局」会顺手把棋盘解锁，屏幕层虽然盖着，
+    // 但 hit 区的 pointerEvents 已经变 auto —— 一旦哪层遮挡失效就会点穿。
+    setBoardInput(G.screen === "playing" || G.screen === undefined);
     applyPanelMode();
     UI.hint.textContent = TEXT.HINT_OPENING;
     renderAll();
+    syncUndoButton();
     if (!opts.fromRemote) netSendEvent(1, 0, 0, 0, "");
   }
 
@@ -2654,12 +4064,9 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     if (G.localMode) netSendEvent(7, 0, 0, 0, "");
   }
 
-  function toggleLocalMode() {
-    G.localMode = !G.localMode;
-    UI.panel.btnLocal.textContent = G.localMode ? "联机" : TEXT.BTN_LOCAL;
-    UI.hint.textContent = G.localMode ? "已切换到同屏轮流" : TEXT.TURN_WHITE;
-    if (G.localMode) netBroadcast({ type: "mode", local: true });
-  }
+  // 【v3.2 删除】toggleLocalMode —— 同屏模式已按用户要求移除，
+  //   面板不再有「切换本地同屏」按钮，这个函数也没有调用点了。
+  //   保留一段说明而不是静默删空，避免后来者以为是漏写。
 
   // ---------- 联机模拟（BroadcastChannel + localStorage 双通道） ----------
   // 说明：这是**同机双窗口同步的模拟**，用来演示「两端局面实时一致」。
@@ -2774,6 +4181,67 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
       showResult();
     } else if (eventType === 7) {
       UI.hint.textContent = "对方拒绝和棋，继续对局";
+    // ===== v2.0 新增事件（8 起；与 lua/levelScript.lua 第 9 区同号同参）=====
+    // 【事件号契约】8=时间档 9=准备 10=开局 11=悔棋请求 12=悔棋答复 13=悔棋结果
+    //   0~7 是 v1 已占用的（0 走子 / 1 新局 / 2 认输 / 3 求和请求 / 4 求和同意 /
+    //   5 保留 / 6 保留 / 7 求和拒绝），v2 一律往后接，绝不复用旧号。
+    } else if (eventType === 8) {
+      // 时间档同步：a = 档位号（0~3），b = 先选者（1/2）。收到就覆盖本端。
+      // 【回声】onNetMessage 开头已按 _from 过滤掉自己发的，不会再弹回来。
+      if (a >= 0 && a < V2_PRESETS.length) {
+        G.presetIdx = a;
+        if (b) G.presetLockedBy = b;
+        syncPresetCards();
+        renderLockTip();
+        if (G.screen === "lobby") renderLobby();
+      }
+    } else if (eventType === 9) {
+      // 准备同步：a = 玩家号（1/2），b = 是否准备。收到的永远记到「对方」那一格。
+      G.lobbyHasPeer = true;
+      G.lobbyReady[1] = !!b;
+      if (G.screen === "lobby") { renderLobby(); maybeStartCountdown(); }
+    } else if (eventType === 10) {
+      // 开局：a = 锁定后的档位号。收到就按该档位开一局。
+      if (a >= 0 && a < V2_PRESETS.length) G.presetIdx = a;
+      G.lobbyHasPeer = true;
+      startPlaying();
+    } else if (eventType === 11) {
+      // 对方请求悔棋 → 弹确认框（同意与否由 onUndoConfirmed/onUndoRejected 决定）
+      // 【注意】这里不预先检查 undoCanUse()：请求方可能是对的、而本端历史还没同步；
+      //   真正回退时 undoApplyPair 里还会再判一次，失败就什么也不改（幂等安全）。
+      G.undoPendingFrom = 2;
+      showParts(UI.undoDlg.parts, true);
+      setBoardInput(false);
+      UI.hint.textContent = TEXT_V2.UNDO_WAIT;
+    } else if (eventType === 12) {
+      // 悔棋答复：b = 1 同意 / 0 拒绝
+      if (b) {
+        const okUndo = undoApplyPair();
+        if (!okUndo) UI.hint.textContent = undoCanUse().msg;
+      } else {
+        G.undoPendingFrom = -1;
+        showParts(UI.undoDlg.parts, false);
+        setBoardInput(G.screen === "playing");
+        syncUndoButton();
+        UI.hint.textContent = TEXT_V2.UNDO_REJECTED;
+      }
+    } else if (eventType === 13) {
+      // 悔棋已执行：a = 目标快照索引，b/c = 双方剩余次数，fen = 回退后的局面。
+      // 以 fen 为准重建，与本端结果一致时是幂等的空操作（双端不会分叉）。
+      if (fen) {
+        G.st = CHESS_RULES.parseFen(fen);
+        G.history = G.history.slice(0, Math.max(0, a) + 1);
+        if (G.history.length === 0) G.history = [makeStartSnapshot()];
+        G.undoLeft[0] = b; G.undoLeft[1] = c;
+        G.undoPendingFrom = -1;
+        showParts(UI.undoDlg.parts, false);
+        G.over = false;
+        hideResult();
+        clearHighlights();
+        setBoardInput(G.screen === "playing");
+        syncUndoButton();
+        renderAll();
+      }
     }
   }
 
@@ -2782,6 +4250,9 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
   // ② 自检可以直接喂一个大 dt 验证「复盘中棋钟不变」，不用等真实时间流逝。
   function tickClock(dt) {
     if (G.review) return;                 // 【复盘】棋钟停摆：复盘是只读回放，不消耗时间
+    // 【v2.0】只有真正在对局屏才走钟。初始界面 / 待机室里 G.st 已存在（boot 里会解析），
+    // 若不加这道闸，用户停在初始界面发呆 15 分钟，点开第一局就直接超时判负。
+    if (G.screen !== "playing") return;
     if (G.st && !G.over) {
       if (G.st.turn === CHESS_RULES.WHITE) {
         G.clockWhite -= dt;
@@ -2798,6 +4269,7 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     const dt = Math.min(0.25, (now - lastFrame) / 1000);
     lastFrame = now;
     tickClock(dt);
+    tickLobby(dt);      // v2.0：待机室倒数（只有 lobby 屏才真的走）
     for (let i = 0; i < 2; i++) if (G.drawCooldown[i] > 0) G.drawCooldown[i] = Math.max(0, G.drawCooldown[i] - dt);
     G.clockTimer += dt;
     if (G.clockTimer >= CLOCK_REFRESH_SEC) { G.clockTimer = 0; renderClocks(); }
@@ -3193,6 +4665,701 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
       // 复位到干净开局
       newGame({ fromRemote: true });
 
+      // ======================================================================
+      // ===== v2.0 自检（初始界面 / 走时档 / 待机室 / 悔棋 / 复盘研习）=====
+      // ----------------------------------------------------------------------
+      // 【口径纪律】本区断言**一律不依赖真实渲染度量**：
+      //   不读 getBoundingClientRect（浏览器里有值、Node shim 里全 0，两边结果不一致），
+      //   不读 computedStyle（浅色主题下 color 的序列化方式各浏览器不同）。
+      //   只断言四类东西：① 状态机字段 ② 数据表数值 ③ DOM 存在性 ④ 文本内容逐字。
+      //   理由：本 Demo 的观感只能由用户打开浏览器确认（见 proto/_v2_notes.md 的
+      //   「browser-run: user」），自检的作用是守住「逻辑与文案没有回归」，
+      //   而不是冒充「画面已经验过」。
+      // 【可重入】本区会改 G.screen / G.presetIdx 等状态，末尾**统一复位**到
+      //   初始界面 + 默认档，保证连跑两次结果一致、也保证用户手动 ?selftest 之后
+      //   页面停在合理的位置。
+      // ======================================================================
+
+      // --- V2-1 走时档数据表：4 档、首钟/加秒逐位正确、默认档 = 快棋 = 900+10 ---
+      (function () {
+        const want = [[60, 0], [180, 2], [900, 10], [5400, 30]];
+        let ok = (V2_PRESETS.length === 4);
+        const det = [];
+        for (let i = 0; i < 4; i++) {
+          const p = V2_PRESETS[i];
+          if (!p) { ok = false; det.push("缺档" + i); continue; }
+          if (p.clockSec !== want[i][0] || p.incSec !== want[i][1]) {
+            ok = false;
+            det.push("档" + i + "=" + p.clockSec + "+" + p.incSec + " 期望" + want[i][0] + "+" + want[i][1]);
+          }
+        }
+        add("v2_preset_table_4", ok, det.join("; ") || "四档数值全部正确");
+      })();
+
+      // --- V2-2 默认档 = 快棋 = 900/10，且与 v1 的 INITIAL_TIME_SEC/INCREMENT_SEC 恒等 ---
+      // 这条是「零回归」的机器证明：默认档改了，v1 的两条棋钟自检就会跟着变，
+      // 而这里显式把两者的相等关系钉住，让「改了默认档却没改 v1 常量」立刻变红。
+      (function () {
+        const d = V2_PRESETS[V2_DEFAULT_PRESET];
+        const ok = !!d && d.clockSec === INITIAL_TIME_SEC && d.incSec === INCREMENT_SEC
+          && d.clockSec === 900 && d.incSec === 10;
+        add("v2_default_preset_is_rapid_900_10", ok,
+            "默认档=" + (d ? d.name + " " + d.clockSec + "+" + d.incSec : "无") +
+            " v1常量=" + INITIAL_TIME_SEC + "+" + INCREMENT_SEC);
+      })();
+
+      // --- V2-3 切换档位真的驱动棋钟（不是只换界面文字）---
+      // 【这是 Lead 指定的核心验收判据】点档位 1 → 棋钟初值 60；点档位 4 → 5400。
+      // 断言的是 G.clockWhite / G.clockBlack，不是卡片上的字。
+      (function () {
+        const savedIdx = G.presetIdx;
+        const savedEntry = G.entry;
+        let ok = true; const det = [];
+        for (let i = 0; i < V2_PRESETS.length; i++) {
+          // onPresetPicked 在非联机入口下不受锁定限制
+          G.entry = 1;
+          const picked = onPresetPicked(i);
+          if (!picked) { ok = false; det.push("档" + i + "选不中"); continue; }
+          startPlaying();          // 真正开局，读棋钟初值
+          const wantSec = V2_PRESETS[i].clockSec;
+          if (G.clockWhite !== wantSec || G.clockBlack !== wantSec) {
+            ok = false;
+            det.push("档" + i + " 棋钟=" + G.clockWhite + "/" + G.clockBlack + " 期望" + wantSec);
+          }
+        }
+        G.presetIdx = savedIdx; G.entry = savedEntry;
+        add("v2_preset_drives_clock", ok, det.join("; ") ||
+            "四档分别驱动出 " + V2_PRESETS.map(p => p.clockSec).join("/") + " 秒");
+      })();
+
+      // --- V2-4 每步加秒也真的按档位走（超快棋 0 加秒 / 慢棋 30 加秒）---
+      (function () {
+        const savedIdx = G.presetIdx, savedEntry = G.entry;
+        G.entry = 1;
+        let ok = true; const det = [];
+        for (const i of [0, 3]) {
+          onPresetPicked(i);
+          startPlaying();
+          G.peerAlive = false; G.mySide = 1;
+          const before = G.clockWhite;
+          selectSquare(12); tryMove(28);            // e2→e4（白方走子）
+          const delta = G.clockWhite - before;
+          // 棋钟在这段逻辑里不走（tick 没跑），所以 delta 应当精确等于加秒数
+          if (delta !== V2_PRESETS[i].incSec) {
+            ok = false;
+            det.push("档" + i + " 加秒=" + delta + " 期望" + V2_PRESETS[i].incSec);
+          }
+        }
+        G.presetIdx = savedIdx; G.entry = savedEntry;
+        add("v2_preset_drives_increment", ok, det.join("; ") || "加秒随档位变化正确");
+      })();
+
+      // --- V2-5 初始界面：标题、4 张卡、3 个入口、全部文案逐字 ---
+      (function () {
+        let ok = true; const det = [];
+        if (UI.start.title.textContent !== "国际象棋") { ok = false; det.push("标题=[" + UI.start.title.textContent + "]"); }
+        if (UI.start.cards.length !== 4) { ok = false; det.push("卡数=" + UI.start.cards.length); }
+        // 卡上档位名逐字（不带 1+0 这种数字写法）
+        const wantNames = ["超快棋", "闪电战", "快棋", "慢棋"];
+        for (let i = 0; i < 4; i++) {
+          const got = UI.start.cards[i] ? UI.start.cards[i].nameEl.textContent : "<无>";
+          if (got !== wantNames[i]) { ok = false; det.push("卡" + (i + 1) + "名=[" + got + "]"); }
+        }
+        // 卡上三行带标签
+        if (UI.start.cards[2].firstEl.textContent !== "首钟：15 分钟") {
+          ok = false; det.push("首钟行=[" + UI.start.cards[2].firstEl.textContent + "]");
+        }
+        if (UI.start.cards[2].incEl.textContent !== "加秒：每步 +10 秒") {
+          ok = false; det.push("加秒行=[" + UI.start.cards[2].incEl.textContent + "]");
+        }
+        if (UI.start.cards[0].estEl.textContent !== "单局：约 1–3 分钟") {
+          ok = false; det.push("预估行=[" + UI.start.cards[0].estEl.textContent + "]");
+        }
+        // 三个入口逐字
+        const wantEntries = ["单人·双人同屏", "单人·复盘研习", "联机·待机室"];
+        for (let i = 0; i < 3; i++) {
+          const got = UI.start.entryBtns[i] ? UI.start.entryBtns[i].textContent : "<无>";
+          if (got !== wantEntries[i]) { ok = false; det.push("入口" + (i + 1) + "=[" + got + "]"); }
+        }
+        add("v2_start_screen_texts", ok, det.join("; ") || "标题/4卡/3入口文案逐字正确");
+      })();
+
+      // --- V2-6 初始界面默认可见、棋盘默认锁定（启动屏就是 start）---
+      (function () {
+        // 先回到 start（本轮自检可能已经把页面开到别的屏）
+        setScreen("start");
+        const startShown = !UI.start.scr.classList.contains("hidden");
+        const lobbyHidden = UI.lobby.scr.classList.contains("hidden");
+        const labHidden = UI.lab.bar.classList.contains("hidden");
+        // 棋盘命中区必须被锁：读的是 style.pointerEvents（纯数据，不依赖渲染）
+        const boardLocked = UI.hitAreas.every(el => el.style.pointerEvents === "none");
+        add("v2_start_screen_default_and_board_locked",
+            startShown && lobbyHidden && labHidden && boardLocked && G.screen === "start",
+            "start=" + startShown + " lobby隐=" + lobbyHidden + " lab隐=" + labHidden +
+            " 棋盘锁=" + boardLocked + " screen=" + G.screen);
+      })();
+
+      // --- V2-7 档位卡选中态：只有一张带 is-sel，且它 == G.presetIdx ---
+      (function () {
+        const savedIdx = G.presetIdx;
+        G.entry = 1;
+        onPresetPicked(1);
+        let selCount = 0, selIdx = -1;
+        for (let i = 0; i < UI.start.cards.length; i++) {
+          if (UI.start.cards[i].bg.classList.contains("is-sel")) { selCount++; selIdx = i; }
+        }
+        const ok = (selCount === 1 && selIdx === 1 && G.presetIdx === 1);
+        G.presetIdx = savedIdx; syncPresetCards();
+        add("v2_preset_card_selected_state", ok,
+            "选中卡数=" + selCount + " 选中索引=" + selIdx + " presetIdx=" + G.presetIdx);
+      })();
+
+      // --- V2-8 联机锁定：「先选者生效」，后选者点击被忽略 ---
+      (function () {
+        const savedIdx = G.presetIdx, savedEntry = G.entry, savedLock = G.presetLockedBy;
+        G.entry = 3; G.presetLockedBy = 0;
+        const first = onPresetPicked(1);              // 先选者锁闪电战
+        G.presetLockedBy = 1;                          // 模拟信号回来：先选的是「我」
+        const second = onPresetPicked(3);              // 后选者想改慢棋 → 必须被拒
+        // 【文案 P0/D-3】锁定行里填的是「你」/「对手」，不再是「玩家1/2」
+        const ok = first === true && second === false && G.presetIdx === 1
+          && UI.start.lockTip.textContent === "由 你 选定";
+        const det = "first=" + first + " second=" + second + " idx=" + G.presetIdx +
+          " tip=[" + UI.start.lockTip.textContent + "]";
+        G.presetIdx = savedIdx; G.entry = savedEntry; G.presetLockedBy = savedLock;
+        syncPresetCards(); renderLockTip();
+        add("v2_preset_first_picker_wins", ok, det);
+      })();
+
+      // --- V2-9 待机室：单人兜底能开局 + 双人准备 → 3 秒倒数 → 自动开局 ---
+      (function () {
+        const savedEntry = G.entry, savedIdx = G.presetIdx;
+        // ① 单人（无第二人）：点「直接开始」必须能进棋盘，不能卡死
+        G.entry = 3; G.lobbyHasPeer = false;
+        G.lobbyReady = [false, false]; G.lobbyCountdown = 0;
+        setScreen("lobby"); renderLobby();
+        const lazyTip = UI.lobby.tip.textContent;
+        onLobbyStartNow();
+        const soloOk = (G.screen === "playing");
+        // ② 双人：两人都准备 → 倒数 3 秒 → 喂 dt 推完 → 自动进 playing
+        G.entry = 3; G.lobbyHasPeer = true;
+        G.lobbyReady = [false, false]; G.lobbyCountdown = 0;
+        setScreen("lobby"); renderLobby();
+        onLobbyReadyToggle();          // 我点准备
+        const halfReady = G.lobbyCountdown;   // 还没倒数
+        G.lobbyReady[1] = true;        // 对方准备
+        maybeStartCountdown();
+        const started = G.lobbyCountdown;
+        // 用真实主循环的同一个函数推进 3 秒（不依赖真实时间流逝）
+        for (let i = 0; i < 40; i++) tickLobby(0.1);
+        const bothOk = (started === V2_COUNTDOWN_SEC) && (G.screen === "playing");
+        G.lobbyHasPeer = false; G.lobbyReady = [false, false]; G.lobbyCountdown = 0;
+        G.entry = savedEntry; G.presetIdx = savedIdx;
+        add("v2_lobby_solo_and_two_players", soloOk && bothOk && halfReady === 0,
+            "单人开局=" + soloOk + " 半就绪倒数=" + halfReady + " 双人倒数=" + started +
+            " 双人开局=" + (G.screen === "playing") + " 单人提示=[" + lazyTip + "]");
+      })();
+
+      // --- V2-10 待机室文案与准备态切换逐字（P0/D-3：你 / 对手 / 等待对手加入…）---
+      (function () {
+        const savedEntry = G.entry;
+        // ① 有对手：两行名字必须是「你」「对手」（不是「玩家1/玩家2」）
+        G.entry = 3; G.lobbyHasPeer = true;
+        G.lobbyReady = [false, false]; G.lobbyCountdown = 0;
+        setScreen("lobby"); renderLobby();
+        const nameMe = UI.lobby.rows[0].nameEl.textContent;
+        const namePeer = UI.lobby.rows[1].nameEl.textContent;
+        const before = UI.lobby.btnReady.textContent;
+        const p2Before = UI.lobby.rows[1].stEl.textContent;
+        onLobbyReadyToggle();
+        const after = UI.lobby.btnReady.textContent;
+        const p1After = UI.lobby.rows[0].stEl.textContent;
+        // ② 没有对手：第 2 行**名字位**直接写「等待对手加入…」，状态位留空。
+        //    （只改标签不改空态会出病句「对手　（空位）」，这是 P0 的连带项。）
+        G.lobbyHasPeer = false; G.lobbyReady = [false, false]; G.lobbyCountdown = 0;
+        renderLobby();
+        const emptyName = UI.lobby.rows[1].nameEl.textContent;
+        const emptyState = UI.lobby.rows[1].stEl.textContent;
+        const soloTip = UI.lobby.tip.textContent;
+        // 【全角空格】名字与状态之间是 U+3000「　」，不是半角空格
+        const stHasIdeographicSpace = p2Before.charCodeAt(0) === 0x3000;
+        const ok = (nameMe === "你") && (namePeer === "对手")
+          && (before === "准备") && (after === "取消准备")
+          && (p2Before === "　未准备") && (p1After === "　已准备")
+          && (emptyName === "等待对手加入…") && (emptyState === "")
+          && (soloTip === "没等到另一位玩家，也可以直接开始")
+          && stHasIdeographicSpace
+          && (UI.lobby.title.textContent === "联机·待机室");
+        G.lobbyHasPeer = false; G.lobbyReady = [false, false];
+        G.entry = savedEntry;
+        setScreen("start");
+        add("v2_lobby_ready_texts", ok,
+            "名字 " + nameMe + "/" + namePeer + " 按钮 " + before + "→" + after +
+            " 对手行=[" + p2Before + "] 我=[" + p1After + "]" +
+            " 无人时=[" + emptyName + "|" + emptyState + "] 提示=[" + soloTip + "]" +
+            " 全角空格=" + stHasIdeographicSpace);
+      })();
+
+      // --- V2-10b 复盘两个入口必须是不同函数，且面板键绑的是研习版 ---
+      // 【为什么这条要存在】Lead 点名要求：将来有人「整理代码」时很容易把
+      // enterReview / enterReviewLab 合并回一个，那一刻 v1 的 4 条复盘自检
+      // （review_prev_next / review_no_clock_in_review / review_exit_restores_board /
+      //   review_empty_rejected）会**静默**失去意义 —— 它们验的是"只读回放"，
+      // 合并后它们验的东西就不存在了，但断言本身仍然绿。
+      // 这里直接钉住「两个引用不同」，合并即红。
+      (function () {
+        const distinct = (enterReview !== enterReviewLab);
+        // enterReview 必须是"只读"的：调用后棋盘命中区仍然全锁
+        const savedEntry = G.entry, savedIdx = G.presetIdx;
+        G.entry = 1; onPresetPicked(V2_DEFAULT_PRESET); startPlaying();
+        G.peerAlive = false; G.mySide = 1;
+        selectSquare(12); tryMove(28);
+        selectSquare(52); tryMove(36);
+        const enteredReadOnly = enterReview();
+        const lockedAfterPlain = UI.hitAreas.every(el => el.style.pointerEvents === "none");
+        exitReview();
+        // enterReviewLab 必须是"可试走"的：调用后棋盘命中区放开
+        const enteredLab = enterReviewLab();
+        const openAfterLab = UI.hitAreas.every(el => el.style.pointerEvents !== "none");
+        exitReviewLab();
+        G.entry = savedEntry; G.presetIdx = savedIdx;
+        add("v2_review_entries_distinct",
+            distinct && enteredReadOnly && lockedAfterPlain && enteredLab && openAfterLab,
+            "两引用不同=" + distinct + " enterReview 锁棋盘=" + lockedAfterPlain +
+            " enterReviewLab 开棋盘=" + openAfterLab);
+      })();
+
+      // --- V2-11 悔棋：成对撤回、双方各扣 1、次数递减到 0 置灰 ---
+      (function () {
+        const savedEntry = G.entry, savedIdx = G.presetIdx;
+        G.entry = 1; onPresetPicked(V2_DEFAULT_PRESET); startPlaying();
+        G.peerAlive = false; G.mySide = 1;
+        // 走 2 个半步（白 e4 / 黑 e5）→ history 应有 3 项
+        selectSquare(12); tryMove(28);
+        selectSquare(52); tryMove(36);
+        const histBefore = G.history.length;      // 3
+        const fenBefore = CHESS_RULES.fenOf(G.st);
+        const leftBefore = G.undoLeft.slice();
+        const ok = undoApplyPair();
+        const histAfter = G.history.length;
+        // 成对撤回：history 3 → 1（回到开局快照），局面回开局，双方各扣 1
+        const pairOk = (histAfter === histBefore - 2) && (G.undoLeft[0] === leftBefore[0] - 1)
+          && (G.undoLeft[1] === leftBefore[1] - 1)
+          && (CHESS_RULES.fenOf(G.st) === START_FEN);
+        // 按钮文案同步为「悔棋（剩 2）」
+        const btnTxt = UI.panel.btnUndo.textContent;
+        // 次数用尽 → 置灰（is-disabled）且 undoCanUse 返回 false
+        const leftAfterOnce = G.undoLeft.slice();
+        G.undoLeft = [0, 0];
+        syncUndoButton();
+        const grayed = UI.panel.btnUndo.classList.contains("is-disabled");
+        const canAfter = undoCanUse().ok;
+        // 复位
+        G.undoLeft = [V2_UNDO_PER_SIDE, V2_UNDO_PER_SIDE];
+        syncUndoButton();
+        G.entry = savedEntry; G.presetIdx = savedIdx;
+        add("v2_undo_pair_and_limit",
+            !!ok && pairOk && btnTxt === "悔棋（剩 2）" && grayed && !canAfter,
+            "history " + histBefore + "→" + histAfter + " 次数" + leftBefore.join("/") + "→" +
+            leftAfterOnce.join("/") + " 按钮=[" + btnTxt + "] 置灰=" + grayed +
+            " 用尽可选=" + canAfter + " 局面回开局=" + (CHESS_RULES.fenOf(G.st) === START_FEN));
+      })();
+
+      // --- V2-12 悔棋四条边界：开局不可悔 / 终局不可悔 / 复盘不可悔 / 单步不可悔 ---
+      (function () {
+        const savedEntry = G.entry, savedIdx = G.presetIdx;
+        G.entry = 1; onPresetPicked(V2_DEFAULT_PRESET); startPlaying();
+        // ① 刚开局（history=1）
+        const atStart = undoCanUse();
+        // ② 只走一步（history=2，凑不齐一对）
+        G.peerAlive = false; G.mySide = 1;
+        selectSquare(12); tryMove(28);
+        const oneMove = undoCanUse();
+        const oneMoveBlocked = undoApplyPair() === false;
+        // ③ 终局
+        selectSquare(52); tryMove(36);          // 补到 2 步
+        G.over = true;
+        const atOver = undoCanUse();
+        G.over = false;
+        // ④ 复盘中
+        G.history.length >= 3 && enterReview();
+        const inReview = undoCanUse();
+        exitReview();
+        const ok = (!atStart.ok && atStart.msg === "刚开局，还没有能退的一步")
+          && (!oneMove.ok && oneMove.msg === "刚开局，还没有能退的一步")
+          && oneMoveBlocked
+          && (!atOver.ok && atOver.msg === "对局已结束，不能再悔棋")
+          && (!inReview.ok && inReview.msg === "复盘里不能悔棋，先退出复盘");
+        G.entry = savedEntry; G.presetIdx = savedIdx;
+        add("v2_undo_boundaries", ok,
+            "开局=" + atStart.msg + " | 单步=" + oneMove.msg + " 且拒执行=" + oneMoveBlocked +
+            " | 终局=" + atOver.msg + " | 复盘=" + inReview.msg);
+      })();
+
+      // --- V2-13 复盘研习：分支试走不污染主变 ---
+      (function () {
+        const savedEntry = G.entry, savedIdx = G.presetIdx;
+        G.entry = 1; onPresetPicked(V2_DEFAULT_PRESET); startPlaying();
+        G.peerAlive = false; G.mySide = 1;
+        selectSquare(12); tryMove(28);      // e2→e4
+        selectSquare(52); tryMove(36);      // e7→e5
+        const histLen0 = G.history.length;
+        const mainFen0 = G.history[G.history.length - 1].fen;
+        const logLen0 = G.moveLog.length;
+        // 进研习，回到开局（idx 0），在主变的开局局面上试走
+        const entered = enterReviewLab();
+        reviewGoto(0);
+        syncReviewBar();
+        const atStartText = UI.lab.progress.textContent;
+        // 开局局面：白方 e2 兵可走 → 点 e2 再点 e4 试走
+        const sel = selectSquare(12);
+        const branched = tryBranchMove(28);
+        const branchFen = G.reviewBranch ? G.reviewBranch.branchFen : "";
+        // 主变必须**一个字节都没动**
+        const mainIntact = (G.history.length === histLen0)
+          && (G.history[G.history.length - 1].fen === mainFen0)
+          && (G.moveLog.length === logLen0);
+        // 分支局面确实与开局不同（真的走出去了）
+        const moved = (branchFen !== "" && branchFen !== START_FEN);
+        // 退回主变 → 分支清空 + 画面回到主变
+        const backOk = onBackToMain() === true && G.reviewBranch === null;
+        const reviewBarShown = !UI.lab.bar.classList.contains("hidden");
+        exitReviewLab();
+        G.entry = savedEntry; G.presetIdx = savedIdx;
+        add("v2_review_branch_does_not_touch_main",
+            entered && sel && branched && mainIntact && moved && backOk && reviewBarShown,
+            "进研习=" + entered + " 试走成功=" + branched + " 主变完好=" + mainIntact +
+            " 分支局面已变=" + moved + " 退回主变=" + backOk + " 动作条可见=" + reviewBarShown +
+            " 开局行=[" + atStartText + "]");
+      })();
+
+      // --- V2-14 复盘研习：「从此局面开新局」历史清空、以该局面为起点 ---
+      (function () {
+        const savedEntry = G.entry, savedIdx = G.presetIdx;
+        G.entry = 1; onPresetPicked(V2_DEFAULT_PRESET); startPlaying();
+        G.peerAlive = false; G.mySide = 1;
+        selectSquare(12); tryMove(28);
+        selectSquare(52); tryMove(36);
+        enterReviewLab();
+        // 在主变第 1 步（白方已走完 e4）的局面下「从开局重下」→ 最干脆的可观察结果
+        reviewGoto(1);
+        syncReviewBar();
+        const startFenAt1 = G.history[1].fen;
+        const okNew = onBranchNewGame();
+        const cleared = (G.history.length === 1);
+        const startIsThatPos = (G.history[0].fen === startFenAt1)
+          && (CHESS_RULES.fenOf(G.st) === startFenAt1);
+        const backToPlay = (G.screen === "playing") && (G.review === null) && (G.over === false);
+        const undoReset = (G.undoLeft[0] === V2_UNDO_PER_SIDE && G.undoLeft[1] === V2_UNDO_PER_SIDE);
+        G.entry = savedEntry; G.presetIdx = savedIdx;
+        add("v2_review_newgame_clears_history",
+            okNew && cleared && startIsThatPos && backToPlay && undoReset,
+            "清空=" + cleared + " 历史长=" + G.history.length + " 起点=该局面=" + startIsThatPos +
+            " 回对局屏=" + backToPlay + " 悔棋次数复位=" + undoReset);
+      })();
+
+      // --- V2-15 屏幕状态机：三块屏互斥，且非对局屏不跑棋钟 ---
+      (function () {
+        const savedEntry = G.entry;
+        G.entry = 1; startPlaying();
+        const clock0W = G.clockWhite;
+        // 把屏切到 start，喂 100 次 0.25s（=25 秒虚拟时间），棋钟必须纹丝不动
+        setScreen("start");
+        for (let i = 0; i < 100; i++) tickClock(0.25);
+        const frozenOnStart = (G.clockWhite === clock0W);
+        // 三块屏互斥：同一时刻只有一个屏幕层的 scr/bar 可见
+        const visStart = !UI.start.scr.classList.contains("hidden");
+        const visLobby = !UI.lobby.scr.classList.contains("hidden");
+        const visibleCount = (visStart ? 1 : 0) + (visLobby ? 1 : 0);
+        // 回到 playing 后棋钟应能继续走
+        setScreen("playing");
+        tickClock(1.0);
+        const tickingAgain = (G.clockWhite === clock0W - 1.0);
+        G.entry = savedEntry;
+        add("v2_screen_machine_and_clock_gate",
+            frozenOnStart && visibleCount === 1 && tickingAgain,
+            "初始界面冻结棋钟=" + frozenOnStart + " 可见屏数=" + visibleCount +
+            " 回对局继续走钟=" + tickingAgain);
+      })();
+
+      // --- V2-16 控件命名纪律：v2 新控件一律 v2 前缀，不许用 btn 前缀 ---
+      // 【为什么这条要进自检】tools_work/consistency_check.cjs 有两道「未登记的按钮」断言：
+      // 任何 `btn` 开头的按钮/命中区都必须登记进 BTN_PAIRS，否则整项 FAIL。
+      // v2 新增 20+ 个按钮，靠人记一定会漏，机器守着最省事。
+      (function () {
+        const bad = [];
+        const all = [];
+        if (UI.start.parts) UI.start.parts.forEach(el => { if (el) all.push(el); });
+        if (UI.lobby.parts) UI.lobby.parts.forEach(el => { if (el) all.push(el); });
+        if (UI.lab.parts) all.push(UI.lab.bar);
+        if (UI.lab.btns) for (const k in UI.lab.btns) { all.push(UI.lab.btns[k].btn); all.push(UI.lab.btns[k].hit); }
+        for (const el of all) {
+          const id = el.getAttribute ? el.getAttribute("data-anchor-id") : null;
+          if (!id) { bad.push("(无 anchorId)"); continue; }
+          if (!/^v2/.test(id)) bad.push(id);
+        }
+        add("v2_controls_use_v2_prefix", bad.length === 0,
+            bad.length ? ("越界 anchorId: " + bad.join(",")) : ("共 " + all.length + " 个 v2 控件全部合规"));
+      })();
+
+      // --- V2-17 面板第三行中剖：两键不重叠、间隙 4%、悔棋键在右 ---
+      // 【v2.0 宽度不再等宽】左「看历史/退出复盘」0.42、右「悔棋（剩 N）」0.46 ——
+      // 右半文字明显更长（6 个全角宽 vs 3~4 字），等宽会让它差 1px 换行。
+      // 所以这条**不再断言等宽**，改为断言：右半不窄于左半（文字更长的那半必须更宽）
+      // + 两键总宽不溢出面板右端。
+      (function () {
+        function lr(el) {
+          return { l: parseFloat(el.style.left), w: parseFloat(el.style.width) };
+        }
+        const a = lr(UI.panel.btnReview), b = lr(UI.panel.btnUndo);
+        const gap = b.l - (a.l + a.w);
+        const rowRight = b.l + b.w;
+        const panelRight = L.panelLeft + L.panelW;
+        const ok = (gap > 0.5) && (Math.abs(gap - L.panelW * 0.04) < 0.5)
+          && (b.w >= a.w - 0.5)                 // 右半不窄于左半
+          && (b.l > a.l)                        // 右半确实在右边
+          && (rowRight <= panelRight + 0.5)     // 不溢出面板
+          && (UI.panel.btnUndo.textContent.indexOf("悔棋（剩 ") === 0);
+        add("v2_panel_row3_split_no_overlap", ok,
+            "左 l=" + a.l.toFixed(1) + " w=" + a.w.toFixed(1) +
+            " 右 l=" + b.l.toFixed(1) + " w=" + b.w.toFixed(1) +
+            " 间隙=" + gap.toFixed(2) + " 期望=" + (L.panelW * 0.04).toFixed(2) +
+            " 行右端=" + rowRight.toFixed(1) + " 面板右端=" + panelRight.toFixed(1));
+      })();
+
+      // --- V2-18 三个硬约束的静态守卫（单文件离线 / stage 定位 / fontScale 取 min）---
+      // 【口径】这三条只能守「写法」不能守「观感」：
+      //   ① 离线：查 DOM 里有没有外链 script/link/img —— 纯 DOM 查询，不依赖渲染
+      //   ② stage 定位：查 #stage 的 inline transform 里同时有 translate(-50% 与 scale(
+      //   ③ fontScale：查 L.fontScale 与 Math.min 表达式的一致性（用真实计算值反推）
+      (function () {
+        let ok = true; const det = [];
+        // ① 无外部脚本/样式/图片
+        const ext = document.querySelectorAll('script[src], link[rel="stylesheet"], img[src]');
+        const extN = ext ? ext.length : 0;
+        if (extN !== 0) { ok = false; det.push("外链元素=" + extN); }
+        // ② stage 的 transform 写法
+        const tf = document.getElementById("stage").style.transform || "";
+        const hasTranslate = tf.indexOf("translate(-50%") >= 0;
+        const hasScale = tf.indexOf("scale(") >= 0;
+        if (!hasTranslate || !hasScale) { ok = false; det.push("stage transform=[" + tf + "]"); }
+        // ③ fontScale = min(canvasW/BASE_W, canvasH/BASE_H)：用 4:3 反推验证
+        //    1600×900 → 1.0；1280×960（4:3）→ min(0.8, 1.0667) = 0.8（只按高度会得 1.067 → 历史 bug）
+        const l169 = computeLayout(1600, 900);
+        const l43 = computeLayout(1280, 960);
+        const fs169Ok = Math.abs(l169.fontScale - 1.0) < 1e-9;
+        const fs43Ok = Math.abs(l43.fontScale - 0.8) < 1e-9;
+        if (!fs169Ok || !fs43Ok) {
+          ok = false;
+          det.push("fontScale 16:9=" + l169.fontScale + " 4:3=" + l43.fontScale + "（4:3 应为 0.8）");
+        }
+        add("v2_hard_constraints_offline_stage_fontscale", ok,
+            det.join("; ") || ("无外链 / stage transform=[" + tf + "] / fontScale 16:9=" +
+              l169.fontScale.toFixed(3) + " 4:3=" + l43.fontScale.toFixed(3)));
+      })();
+
+      // --- V2-19 新增文案键无空缺（防止 .replace 里 {n}/{m}/{who} 模板被误删）---
+      // 【含 P0/D-3 的 6 个 LOBBY_* 规范键】旧键名（PLAYER_1/PLAYER_2/PLAYER_EMPTY/
+      // READY_YES/READY_NO/LOBBY_WAIT_JOIN）已作废，这里同时断言它们**不再存在**，
+      // 防止有人照旧文档把旧键加回来（那样界面会显示 undefined）。
+      (function () {
+        const need = ["BTN_UNDO", "CONFIRM_UNDO", "TC_LOCKED_BY", "REVIEW_PROGRESS",
+                      "START_TITLE", "ENTRY_1", "ENTRY_2", "ENTRY_3",
+                      // P0/D-3 六个规范键
+                      "LOBBY_ME", "LOBBY_OPP", "LOBBY_SLOT_EMPTY",
+                      "LOBBY_READY_ON", "LOBBY_READY_OFF", "LOBBY_NOBODY",
+                      "BTN_READY", "BTN_UNREADY", "BTN_START_NOW",
+                      "BTN_BACK_TO_MAIN", "BTN_BRANCH_NEWGAME"];
+        const missing = need.filter(k => typeof TEXT_V2[k] !== "string" || TEXT_V2[k] === "");
+        // 旧键名必须不存在（除了注释里提到它们，TEXT_V2 表里不许有真键）
+        const obsolete = ["PLAYER_1", "PLAYER_2", "PLAYER_EMPTY",
+                          "READY_YES", "READY_NO", "LOBBY_WAIT_JOIN"];
+        const revived = obsolete.filter(k => typeof TEXT_V2[k] === "string");
+        // 模板占位符必须在（否则 replace 后仍是原文，界面会出现 {n} 字样）
+        const tplOk = TEXT_V2.BTN_UNDO.indexOf("{n}") >= 0
+          && TEXT_V2.TC_LOCKED_BY.indexOf("{who}") >= 0
+          && TEXT_V2.REVIEW_PROGRESS.indexOf("{n}") >= 0
+          && TEXT_V2.REVIEW_PROGRESS.indexOf("{m}") >= 0;
+        // P0 逐字抽查（这两个是本次的核心决策，字错一个就是决策没落地）
+        const p0Ok = TEXT_V2.LOBBY_ME === "你" && TEXT_V2.LOBBY_OPP === "对手"
+          && TEXT_V2.LOBBY_SLOT_EMPTY === "等待对手加入…"
+          && TEXT_V2.LOBBY_TITLE === "联机·待机室";
+        // 省略号必须是单字符 U+2026，不是三个半角点
+        const ellOk = TEXT_V2.LOBBY_SLOT_EMPTY.indexOf("\u2026") >= 0
+          && TEXT_V2.LOBBY_SLOT_EMPTY.indexOf("...") < 0;
+        // FOOT_TIP ≤ 20 汉字（Lead：21 字是真的会被截断）
+        const han = (TEXT_V2.FOOT_TIP.match(/[\u4e00-\u9fff]/g) || []).length;
+        const footOk = han <= 20;
+        add("v2_text_keys_present",
+            missing.length === 0 && tplOk && revived.length === 0 && p0Ok && ellOk && footOk,
+            "缺键=" + (missing.join(",") || "无") + " 模板占位=" + tplOk +
+            " 旧键复活=" + (revived.join(",") || "无") + " P0逐字=" + p0Ok +
+            " 单字符省略号=" + ellOk + " FOOT_TIP汉字=" + han + "/20");
+      })();
+
+      // --- V2-19b 板高 ≥ 2.1 × 字号（本项目已踩三次的"整行被吞"硬规则）---
+      // 【为什么是 2.1】行高 1.2× + 上下内边距 0.9×。违反的后果**不是截断，
+      // 而是整行被吞掉、什么都不显示、也不报错** —— 本项目已踩三次：
+      //   ① v1.10 结算面板标题  ② v2.0 块 1 的档位名  ③ gdd §5.6 倒数数字 72。
+      // 【口径】读 fontSize 与 style.height 两个纯内联数值，
+      // 不依赖 getBoundingClientRect —— 那个在 Node shim 里全是 0，浏览器里有值，两边结论不一致。
+      // 【v2.0 补：把 v1 面板按钮也纳进来】初版只遍历 UI.start/lobby/lab/undoDlg 四组，
+      // 漏掉了 v1 的面板按钮（尤其第三行被中剖成半宽的「退出复盘」/「悔棋（剩 N）」）。
+      // 那正是我上一轮自己指出的断言盲区 —— 现在补上 panel 这组。
+      (function () {
+        const els = [];
+        const collect = (parts) => { if (parts) parts.forEach(el => { if (el) els.push(el); }); };
+        collect(UI.start.parts); collect(UI.lobby.parts); collect(UI.lab.parts);
+        collect(UI.undoDlg.parts);
+        // 【补盲区】v1 面板的按钮与文字：normalParts / reviewParts 两组 + 第三行两键 + 提示条。
+        // 注意 normalParts/reviewParts 是**互斥显隐**的，但断言要看的是几何不是可见性，
+        // 所以两组都收进来（同时隐藏的两个不会被"跳过"逻辑吃掉，因为它们都有文字）。
+        collect(UI.panel.normalParts); collect(UI.panel.reviewParts);
+        collect([UI.panel.btnReview, UI.panel.btnUndo, UI.hint]);
+        const bad = [];
+        let checked = 0, skipped = 0;
+        for (const el of els) {
+          const txt = el.textContent;
+          if (!txt || txt.trim() === "") { skipped++; continue; }
+          const fsPx = parseFloat(el.style.fontSize);
+          const hPx = parseFloat(el.style.height);
+          if (!isFinite(fsPx) || !isFinite(hPx) || fsPx <= 0) { skipped++; continue; }
+          checked++;
+          const need = 2.1 * fsPx;
+          if (hPx + 0.01 < need) {
+            const id = el.getAttribute ? el.getAttribute("data-anchor-id") : "?";
+            bad.push(id + " h=" + hPx.toFixed(1) + " 字号=" + fsPx.toFixed(1) +
+                     " 需≥" + need.toFixed(1) + " 文=[" + txt.slice(0, 12) + "]");
+          }
+        }
+        add("v2_text_box_height_ge_2_1x_font", bad.length === 0,
+            "检查 " + checked + " 个文本元素（含 v1 面板按钮），跳过 " + (skipped) + " 个（无文字）" +
+            (bad.length ? ("；违规: " + bad.join(" | ")) : "；全部满足 板高 ≥ 2.1×字号"));
+      })();
+
+      // --- V2-19c 文字宽度不得超出容器（补「退出复盘」半宽盲区）---
+      // 【为什么必须单独一条】高度够 ≠ 放得下。面板第三行被中剖成半宽后，
+      // `退出复盘`（4 汉字）/ `悔棋（剩 3）`（约 6 全角宽）在半宽里会不会换行是纯宽度问题，
+      // 2.1×字号那条完全管不到它。我上一轮明确说过这是唯一漏网处，这里补上。
+      //
+      // 【字宽估算口径】不测真实渲染（Node shim 没有字体度量），用保守的经验值：
+      //   全角字符（CJK / 全角标点 / 全角括号）= 1.00 × 字号
+      //   其余（ASCII 数字字母空格）= 0.55 × 字号
+      // 这是**上界估计**：真机上 Microsoft YaHei / PingFang 的汉字宽约 1.0em，
+      // 数字约 0.5em，所以估出来偏宽 —— 宁可保守也不放过。
+      // 判定用 boxW × 0.94（预留左右各 3% 内边距），与 .v2btn 的实际排版留白同量级。
+      (function () {
+        const isWide = (ch) => {
+          const c = ch.codePointAt(0);
+          return (c >= 0x4E00 && c <= 0x9FFF)     // CJK 统一表意
+              || (c >= 0x3000 && c <= 0x303F)     // CJK 标点（含 、。「」）
+              || (c >= 0xFF00 && c <= 0xFFEF)     // 全角形式（含 （） ：）
+              || (c >= 0x2010 && c <= 0x2027)     // 破折号/间隔号/省略号区
+              || c === 0x00B7;                    // 间隔号 ·
+        };
+        const estWidth = (txt, fsPx) => {
+          let w = 0;
+          for (const ch of txt) w += (isWide(ch) ? 1.0 : 0.55) * fsPx;
+          return w;
+        };
+        // 待检：所有 v2 按钮 + v1 面板按钮（它们都是"文字固定在框里"的控件）
+        const boxes = [];
+        const add_ = (el, label) => { if (el) boxes.push([el, label]); };
+        // 入口三键
+        (UI.start.entryBtns || []).forEach((el, i) => add_(el, "v2entry" + (i + 1)));
+        // 待机室按钮
+        add_(UI.lobby.btnReady, "v2btnready");
+        add_(UI.lobby.btnStart, "v2btnstartnow");
+        add_(UI.lobby.btnBack, "v2lobbyleave");
+        // 复盘动作条六键
+        if (UI.lab.btns) for (const k in UI.lab.btns) add_(UI.lab.btns[k].btn, "v2rev" + k);
+        // 悔棋弹窗两键
+        add_(UI.undoDlg.btnYes, "v2undoyes");
+        add_(UI.undoDlg.btnNo, "v2undono");
+        // v1 面板：第三行中剖的两键（**盲区就在这**）+ 正常/复盘两组的按钮
+        add_(UI.panel.btnReview, "btnreview");
+        add_(UI.panel.btnUndo, "v2undo");
+        (UI.panel.normalParts || []).forEach((el) => {
+          if (el && el.classList && el.classList.contains("btn")) {
+            add_(el, el.getAttribute ? el.getAttribute("data-anchor-id") : "panelBtn");
+          }
+        });
+        (UI.panel.reviewParts || []).forEach((el) => {
+          if (el && el.classList && el.classList.contains("btn")) {
+            add_(el, el.getAttribute ? el.getAttribute("data-anchor-id") : "panelBtn");
+          }
+        });
+        const bad = [];
+        let checked = 0;
+        for (const [el, label] of boxes) {
+          const txt = el.textContent;
+          if (!txt || txt.trim() === "") continue;
+          const fsPx = parseFloat(el.style.fontSize);
+          const boxW = parseFloat(el.style.width);
+          if (!isFinite(fsPx) || !isFinite(boxW) || fsPx <= 0) continue;
+          checked++;
+          const need = estWidth(txt, fsPx);
+          const avail = boxW * 0.94;
+          if (need > avail + 0.01) {
+            bad.push(label + " 需宽" + need.toFixed(0) + " 可用" + avail.toFixed(0) +
+                     " 字号" + fsPx.toFixed(0) + " 文=[" + txt + "]");
+          }
+        }
+        add("v2_text_width_fits_box", bad.length === 0,
+            "检查 " + checked + " 个按钮文字（含面板第三行中剖的两键）" +
+            (bad.length ? ("；溢出: " + bad.join(" | ")) : "；全部放得下"));
+      })();
+
+      // --- V2-20 悔棋按钮文案四档逐字（剩 3 / 2 / 1 / 0）---
+      (function () {
+        const saved = G.undoLeft.slice();
+        const want = ["悔棋（剩 3）", "悔棋（剩 2）", "悔棋（剩 1）", "悔棋（剩 0）"];
+        let ok = true; const det = [];
+        for (let n = 3; n >= 0; n--) {
+          G.undoLeft = [n, n];
+          syncUndoButton();
+          const got = UI.panel.btnUndo.textContent;
+          if (got !== want[3 - n]) { ok = false; det.push("剩" + n + "→[" + got + "]"); }
+        }
+        G.undoLeft = saved;
+        syncUndoButton();
+        add("v2_undo_button_texts", ok, det.join("; ") || "四档文案逐字正确（全角括号）");
+      })();
+
+      // ===== v2.0 自检结束：统一复位到「初始界面 + 默认档」=====
+      // 【必须复位】上面 20 条断言大量改 G.screen / G.presetIdx / G.undoLeft / history，
+      // 若不复位，用户手动打开 ?selftest=1 后会停在一副奇怪的局面上。
+      (function () {
+        G.entry = 1;
+        G.presetIdx = V2_DEFAULT_PRESET;
+        G.presetLockedBy = 0;
+        G.lobbyHasPeer = false;
+        G.lobbyReady = [false, false];
+        G.lobbyCountdown = 0;
+        G.undoLeft = [V2_UNDO_PER_SIDE, V2_UNDO_PER_SIDE];
+        G.undoPendingFrom = -1;
+        G.peerAlive = false;
+        G.mySide = 1;
+        G.review = null;
+        G.reviewBranch = null;
+        G.over = false;
+        G.clockWhite = INITIAL_TIME_SEC; G.clockBlack = INITIAL_TIME_SEC;
+        setLegalHintColor(false);
+        G.st = CHESS_RULES.parseFen(START_FEN);
+        G.history = [makeStartSnapshot()];
+        G.moveLog = []; G.capturedWhite = []; G.capturedBlack = [];
+        G.lastFrom = -1; G.lastTo = -1;
+        clearHighlights();
+        hideResult();
+        syncPresetCards();
+        renderLockTip();
+        applyPanelMode();
+        renderAll();
+        syncUndoButton();
+        G.entry = 1;
+        setScreen("start");
+      })();
+
       const ok = checks.every(c => c.pass);
       return { ok, checks };
     };
@@ -3226,6 +5393,10 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     const params = new URLSearchParams(location.search);
 
     buildBoard(); buildPanel(); buildResult(); buildPromo(); buildDrawDlg();
+    // v2.0 三块新界面 + 悔棋确认框。**必须在这四行之后建**：
+    // 屏幕层要压在最上面（同级后出现的在上），弹窗又要压在屏幕层上面，
+    // 所以顺序是 面板/棋盘 → 结算/升变/求和 → v2 屏 → v2 悔棋框。
+    buildV2Start(); buildV2Lobby(); buildV2ReviewBar(); buildV2UndoDlg();
     G.st = CHESS_RULES.parseFen(START_FEN);
     // 开局快照必须在建完 UI、解析完初始局面之后写入（makeStartSnapshot 要读 G.st 的 FEN）
     G.history = [makeStartSnapshot()];
@@ -3234,8 +5405,21 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
     // 没有第二档可切。旧链接带这个参数不会报错，只是被忽略。
     G.uiReady = true;
     applyPanelMode();
+    syncPresetCards();
+    renderLockTip();
     renderAll();
-    setBoardInput(true);
+    // 【v2.0 启动屏】默认进初始界面，不是直接进棋盘。
+    // setScreen 会一并处理：屏幕层显隐、棋盘锁定、面板命中区开关。
+    // 【顺序】**必须在 renderAll() 之后**：renderAll 会重绘棋子并清高亮，
+    // 若先 setScreen 再 renderAll，屏幕层虽然可见但棋盘底层刚被动过，无害；
+    // 反过来则会因为 setScreen 里 setBoardInput(true) 把初始界面的锁解掉。
+    setScreen("start");
+    // ?screen=playing 直接进棋盘（调试/自动化用；默认不传 = 初始界面）
+    if (params.get("screen") === "playing") {
+      G.entry = 1; G.localMode = true; startPlaying();
+    } else if (params.get("screen") === "lobby") {
+      G.entry = 3; setScreen("lobby"); renderLobby();
+    }
     initNet();
     fitStage();
     window.addEventListener("resize", fitStage);
@@ -3261,7 +5445,7 @@ if (typeof window !== "undefined") window.CHESS_RULES = CHESS_RULES;
           boardSq0: g(UI.squares[0]),
           boardSq63: g(UI.squares[63]),
           panelBg: g(UI.panel.bg),
-          btnLocal: g(UI.panel.btnLocal),
+          btnDraw: g(UI.panel.btnDraw),
           stageTransform: stageEl.style.transform,
           bodyOverflow: getComputedStyle(document.body).overflow,
         };

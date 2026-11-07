@@ -38,7 +38,7 @@ function mkEl(tag) {
   };
   el.className = "";
   el.classList = mkClassList(el);
-  el.appendChild = (c) => { el.children.push(c); c.parentNode = el; return c; };
+  el.appendChild = (c) => { el.children.push(c); c.childNodes.push(c); c.parentNode = el; return c; };
   el.addEventListener = (ev, fn) => { (el._listeners[ev] = el._listeners[ev] || []).push(fn); };
   el.removeEventListener = (ev, fn) => {
     const a = el._listeners[ev] || [];
@@ -46,7 +46,16 @@ function mkEl(tag) {
   };
   el.setAttribute = (k, v) => { el.attrs[k] = String(v); };
   el.getAttribute = (k) => (k in el.attrs ? el.attrs[k] : null);
-  // querySelectorAll 只在本脚本内被用于空集合场景；返回 children 过滤（不参与关键断言）
+  // 【shim 补齐 2026-11-05】__selfTest 的 no_glyph_piece_text（18b）断言会遍历
+  // slot.el.childNodes 检查有没有残留文字节点（棋符画法已删除的守卫）。
+  // 缺这一项会抛 TypeError: slot.el.childNodes is not iterable → 整份自检 FAIL。
+  // 只补 shim，不动断言逻辑：childNodes 与 children 保持同一份，语义等价于「只有元素子节点」。
+  el.childNodes = el.children;
+  el.removeChild = (c) => {
+    const i = el.children.indexOf(c);
+    if (i >= 0) el.children.splice(i, 1);
+    return c;
+  };
   el.querySelectorAll = () => [];
   el.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1600, height: 900, right: 1600, bottom: 900 });
   el.click = () => { for (const fn of (el._listeners.click || [])) fn({ stopPropagation() {}, preventDefault() {} }); };

@@ -706,3 +706,99 @@ Demo 是体验沟通件，缺音效不阻塞交付，混进 FAIL 只会变成永
 | `tools_work/consistency_check.cjs` | ALL CONSISTENT |
 | `tests/static_checks.cjs` | **9/9 PASS**（新增 CHECK-8） |
 | Demo 结构自检 | 48/48 |
+
+---
+
+## 2026-11-05 · v1.12 issue #3 修复 + API 全面审计（runtime=simulator）
+
+环境：千星 UI 模拟器，canvas `pc-16-9`（1600×900），Lua Runtime。
+执行者：AI（`qxqy_studio_play` start/pointer/runCase/get{inspect:true}）。
+用例：`tests/issue-3-cases.md`；审计：`docs/api-audit.md`。
+
+### 一、issue #3 根因与修复
+
+**症状**：选中一枚棋子后，盘面上同时出现「本次的绿点」与「上一次选中剩下的绿点」，
+后者指向的格子这枚棋子走不到；点那些绿点无反应。
+
+**根因**：`select_square` **不先清空落点池**。`UI.legalHL[1..28]` 是按索引复用的固定池，
+旧代码只把本次用到的前 n 个 `SetActive(true)`，然后把 `UI.legalHLUsed = n`，
+**从不关闭上一次打开的那些**。于是「先选 8 落点的子、再选 2 落点的子」就会残留 6 个绿点。
+
+**为什么前几轮没抓到**：`clear_highlights()`（取消选中/走子/新开局/退出复盘）本身是对的，
+它会把 28 个全关。bug 只在**「直接从一个子改选另一个子」**这条路径上出现。
+
+**修法**：抽出 `hide_legal_pool()`，`clear_highlights()` 与 `select_square()` 共用，
+`select_square` 在绘制新落点前调用。
+
+### 二、Red → Green 实跑证据
+
+| 阶段 | 用例 | 结果 |
+|---|---|---|
+| **Red**（临时注释掉 `hide_legal_pool()`） | `issue3-RED-proof` | ❌ FAILED at 5.4 —— `legalhl3: expected false, actual **true**` |
+| **Green**（恢复修复） | `issue3-GREEN-regression` | ✅ passed：`legalhl1/2=true`，`legalhl3/5/8=false` |
+| 回归（加完 showCursor 修复后再跑） | `issue3-regress-after-showcursor` | ✅ passed，6 条断言全绿 |
+
+> **这条用例是怎么设计出来的**：前 5 组尝试都**无法区分**——初始局面里没有任何棋子有 3 个以上
+> 落点（马 2 个、兵 1~2 个），残留没有可观测空间，改前改后都「绿」。
+> 最终用例先走 5 手把白后送到 h5（落点 ≥8 个），再改选 a2 兵（2 个目标），
+> `legalhl3` 才成为那个「必须消失的残留」。
+> **教训：一条永远绿的用例不叫回归用例，先证明它能红。**
+
+### 三、同批修的 P0：容器 `showCursor` 从未设置
+
+**文档依据**（§24(1) L1031 逐字）：
+> `showCursor`：是否显示常驻光标；**CursorEvent 相关方法都需设置该参数为真后才可正常使用**
+
+全库 grep `showCursor` / `GetClientUIRoots` = **0 处**。本项目全部交互走 `AddCursorEventListener`
+（64 格 + 面板 + 弹窗），真机上缺这一项 → **点击完全不触发且不报错**。
+
+**为什么漏了**：体外沙箱未实现该字段（`docs/沙箱能力清单.md` 第二节已记），
+模拟器点击照常可用 → **模拟器全绿完全证明不了真机可用**。
+§四.4 甚至早写了「`showCursor` 用 `~= nil` 探测」的对策，但从未落地进代码。
+
+**修法**：`build_all_ui` 新增 `enable_show_cursor()`，对 `script.object` 与
+`game.GetClientUIRoots()[1]` 各设一次，pcall + 读回日志。
+
+**模拟器实跑**：
+```
+[Chess] 容器 showCursor=true 已生效（script.object）
+[Chess] 容器 showCursor=true 已生效（GetClientUIRoots[1]）
+```
+
+### 四、API 全面审计结论（`docs/api-audit.md`，31 条）
+
+以 `千星井字棋资料/客户端控件API文档.md`（1310 行）+ `test.lua` 为唯一依据逐项回查。
+
+**判正确（20 条）**，含所有关键接口：`InstantiateClientUIControl` 参数、`imageType=Stretch`、
+`SetImage(src,id)`+`StaticReference`、`imageColor`、`AddCursorEventListener(CursorClick, fn)`、
+`AddInt/AddString/SendSignal`、`RegisterServerSignalHandler` 形参、`script.object`、
+`PlayAudio2D` 系列、`Color.FromRGB/FromRGBA`、7 个生命周期名、Lua 环境限制。
+
+**判错误（3 条，已修 2 条）**：
+
+| 编号 | 缺陷 | 处置 |
+|---|---|---|
+| E-01 | 容器 `showCursor` 从未设置 | ✅ 已修（见上） |
+| E-03 | 注释里 4 组 API 文档行号全部失效（L516-527 / L813 / L792 / L176 / L424-435） | ✅ 已修，改为 §小节+正确行号 |
+| E-02 | `SetAnchoredPosition` 坐标域（文档 L738 说「有父级→父级中心」） | ⏸ **不采信为代码缺陷**，理由见下 |
+
+**为什么不按 E-02 改代码**：审计给的三条路线里，路线①建议 `UI.host = nil`（让所有控件无父级）。
+但运行树实测 `sq_8` 写入 `449/186.75`、读回 **`449/186.75`** —— 若真按「父级中心偏移」解释，
+整块 1600×900 界面会被推出画布，而实际渲染完全正常。
+即**模拟器行为与文档 L738 字面不符**，界面是对的。
+故保留现状，把实测证据补进 `docs/锚定配置表.md` §一末，并把「真机读回 GetAnchoredPosition 比对」
+列为真机首测必查项 —— 真机若确实按父级中心解释，再走折算路线。
+
+**判「文档未覆盖」（5 组）**：pivot 与 anchoredPosition 的耦合、`SetLocalRotation` 的角度单位与轴心、
+`OnUpdate(dt)` 的 dt 单位等 —— 均为真机首测必验项，不当作缺陷。
+
+### 五、本轮仍未验证（必须真机）
+
+| 项 | 原因 |
+|---|---|
+| **`showCursor` 在真机上是否真能让点击生效** | 模拟器认这个字段 ≠ 真机认。进游戏点棋盘即可验证 |
+| **`SetAnchoredPosition` 真机坐标域** | 模拟器已证是画布坐标，真机未证；读回任一控件 `GetAnchoredPosition()` 比对即可 |
+| `SetLocalRotation` 角度单位/轴心 | 文档未写 |
+| `OnUpdate(dt)` dt 单位 | 文档未写，项目按秒用 |
+| 控件容量（1367 个） | 未上真机 |
+| 音色 | 模拟器只记录 audioId |

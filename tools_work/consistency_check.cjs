@@ -201,7 +201,8 @@ const BTN_PAIRS = [
   ["新开一局", "btnnew", "btnnew"],
   ["认输", "btnresign", "btnresign"],
   ["求和", "btndraw", "btndraw"],
-  ["切换本地同屏", "btnlocal", "btnlocal"],
+  // 【v3.2 删除「切换本地同屏」】用户要求删按钮、删同屏模式，Lua 与 Demo 两侧
+  //   都不再有 btnlocal。配平表必须同步删，否则会报「缺少控件」。
   ["看历史/退出复盘（通栏）", "btnreviewtoggle", "btnreviewtoggle"],
   ["复盘·开局", "btnreviewstart", "btnrevstart"],
   ["复盘·上一步", "btnreviewprev", "btnrevprev"],

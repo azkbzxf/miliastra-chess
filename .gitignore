@@ -14,6 +14,10 @@ __pycache__/
 reports/*.png
 reports/*.jpg
 reports/glyphtest/
+# 真机联调时的窗口截图（2026-11 实测 50 张 ≈ 46 MB，全是调试过程产物）
+# 【为什么必须单独写】这些 png 在 tools_work/ 下，不在 reports/ 里，
+# 漏掉会让仓库凭空大 46 MB。同目录下的 g*.ps1 / _z*.py 截图脚本要保留，所以只忽略 shots/。
+tools_work/win/shots/
 
 # ===== 音效试听素材（游戏音频资产，版权归米哈游，绝不入库）=====
 # 本地试听用，由 tools_work/make_sfx_preview.mjs 从资产 CDN 拉取生成
@@ -23,6 +27,10 @@ docs/音效试听.html
 # ===== 备份与临时文件 =====
 *.bak
 *.bak.*
+# 【2026-11 修】上面两条只认「.bak 结尾」或「.bak.xxx」，
+# 但实际用的是 `chess.save.json.bak-before-v2` 这种 `-` 接后缀的命名 →
+# 两个模式都匹配不到，330 KB 的存档备份会被误提交。补这一条兜住。
+*.bak-*
 _ls_backup.lua
 tmp/
 .dsh/

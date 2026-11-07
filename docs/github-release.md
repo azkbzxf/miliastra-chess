@@ -1,5 +1,29 @@
 # 上架 GitHub · 逐步操作指南
 
+> **⭐ 2026-11-07 重要更新：本仓库其实早就在 GitHub 上了。**
+> 实测 `git remote -v` 有 `origin = https://github.com/azkbzxf/miliastra-chess.git`，
+> `git branch -vv` 显示 `* main 41d8789 [origin/main]`。
+> 所以本文档**第零节之前的「首次上架」流程已经走过一次**，
+> 日常只需要「提交 + 推送」（见下方「日常更新」）。
+> **凭据**：不需要 PAT、不需要 GitHub MCP —— `gh` CLI 2.100.0 已用 keyring 登录 `azkbzxf`。
+>
+> ## 日常更新（这才是现在要用的）
+>
+> ```bash
+> cd "/d/输出目录/国际象棋"
+> git status --short          # 先看要提交什么
+> git add -A
+> git commit -m "feat: ..."   # 说明改了什么
+> git push                    # gh 的 keyring 凭据已够用
+> ```
+>
+> **推送前必做的 3 项安全检查**（本仓库真实踩过坑，见「一之三」）：
+> ```bash
+> git diff --cached --name-only | grep -Ei '\.(mp3|wav|ogg)$'      # 必须空
+> git diff --cached --name-only | grep -E '^tools_work/win/shots/'  # 必须空（50 张 ≈46MB）
+> git diff --cached --name-only | grep -Ei '\.bak($|[-.])'          # 必须空（存档备份）
+> ```
+
 > 目标：把 `D:\输出目录\国际象棋` 变成 GitHub 上的一个公开仓库。
 > 本指南里的**所有文件数、体积、忽略规则都是实测的**（2026-11 核对，方法见附录 A），不是估算。
 > 命令给了 **MSYS bash** 和 **PowerShell** 两版，按你平时用的终端挑一版照抄。
@@ -84,7 +108,62 @@ msedge.exe --headless=new --disable-gpu --hide-scrollbars `
 
 ---
 
-## 一、仓库命名与描述建议
+## 一之三、`.gitignore` 的两个真实缺口（2026-11-07 实测修复）
+
+上架一年后重新核对时发现：**`.gitignore` 挡不住两类文件**，会让仓库凭空变大。
+
+| 文件 | 体积 | 为什么没被挡住 | 已修 |
+|---|---|---|---|
+| `tools_work/win/shots/*.png`（50 张） | **≈46 MB** | 忽略规则只写了 `reports/*.png`，这些在 `tools_work/` 下 | ✅ 加 `tools_work/win/shots/` |
+| `workspace/chess/chess.save.json.bak-before-v2` | 330 KB | `*.bak` 要求 `.bak` 结尾，`*.bak.*` 要求 `.bak.` 后接东西，而这份是 **`.bak-`** 接后缀 | ✅ 加 `*.bak-*` |
+
+**造成的差别**：未跟踪体积 **57.3 MB → 2.03 MB（−96.3%）**，文件数 129 → 78。
+
+> **教训（值得记住的通用一条）**：
+> 忽略规则要按**实际命名的形状**写，不要按「我以为别人会怎么命名」写。
+> `*.bak` / `*.bak.*` 看起来覆盖了备份，实际漏掉了 `.bak-<描述>` 这种最自然的写法。
+> **验证方法是 `git check-ignore -v <路径>`**——它会告诉你到底是哪条规则（或没有规则）命中了，
+> 比盯着 `.gitignore` 猜可靠得多。
+>
+> 另一条：**只忽略目录、不误伤同目录脚本**。这里只忽略 `win/shots/`，
+> 同目录的 9 个 `.py` + 6 个 `.ps1` 截图脚本必须保留（它们可复跑），
+> 所以**不能**简单写 `tools_work/win/`。
+
+### 推送前必查的 5 条（实测命令，全部要 CLEAN）
+
+```bash
+git diff --cached --name-only | grep -Ei '\.(mp3|wav|ogg|m4a|mp4)$'      || echo AUDIO_CLEAN
+git diff --cached --name-only | grep -E '^tools_work/(icons|toolbox|fit_out)/' || echo BIGDIRS_CLEAN
+git diff --cached --name-only | grep -E '^tools_work/win/shots/'          || echo SHOTS_CLEAN
+git diff --cached --name-only | grep -Ei '\.bak($|[-.])'                  || echo BAK_CLEAN
+git diff --cached --name-only | grep -Ei '(secret|credential|\.env$|\.pem$|\.key$)' || echo CRED_CLEAN
+```
+
+> **别把 `token` 放进这条 grep。** 我第一次检查时把 `token` 当危险词，
+> 结果命中了 `tools_work/issue1/_verify_token_timing.cjs` —— 那是验证**客户端回声 token 协议**的
+> 4 KB 脚本，跟凭据毫无关系。**关键词太宽会制造假警报**，真出现凭据时反而会被这条假警报稀释掉。
+
+### 行尾：`proto/chess_demo.html` 为什么不用先处理
+
+它是 CRLF，而 `.gitattributes` 是 `* text=auto eol=lf`，看起来像个坑。实测结论是**没问题**：
+
+```
+工作区 CR 字节数          5506   ← 是 CRLF
+暂存 blob CR 字节数          0   ← 规范化成 LF
+HEAD blob CR 字节数          0   ← 仓库本来就存 LF
+--ignore-cr-at-eol 前后 numstat   完全相同（+2226 / −42）
+```
+
+**判据只有一条**：`git diff --cached --numstat` 与加 `--ignore-cr-at-eol` 后是否相同。
+相同 ⇒ diff 里没有一行是"仅因行尾"产生的。
+若不同（且第一列≈文件总行数）⇒ 才是整文件假 diff，那时才需要处理。
+
+> 顺带记一个读数坑：用 `awk sub(/\r$/,"")` 数 CRLF 在 MSYS 下**不准**（文本模式把 `\r` 吃掉了，
+> 会数出 0）。要用 `tr -cd "\r" | wc -c` 数字节。
+
+---
+
+## 一、仓库命名与描述建议（创建时用，已创建则跳过）
 
 | 项 | 建议值 |
 |---|---|
